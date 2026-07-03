@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-LOCAL_FORKS="${HOME}/.claude/local-forks"
+LOCAL_FORKS="${LOCAL_FORKS:-${HOME}/.claude/local-forks}"
 SKILLS_DIR="${HOME}/.claude/skills"
 PLUGINS_CACHE="${HOME}/.claude/plugins/cache"
 INSTALLED_JSON="${HOME}/.claude/plugins/installed_plugins.json"
