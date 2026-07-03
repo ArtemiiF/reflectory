@@ -36,7 +36,13 @@ Step 0 seeds the working tree if needed; then three sequential questions via `As
 
 ```bash
 git clone https://github.com/ArtemiiF/reflectory.git ~/.claude/local-forks
+chmod +x ~/.claude/local-forks/_system/scripts/pre-commit
+ln -sfn ~/.claude/local-forks/_system/scripts/pre-commit ~/.claude/local-forks/.git/hooks/pre-commit
 ```
+
+(The hook link mirrors bootstrap.sh Step 2.5 — plugin-marketplace users never run
+bootstrap, and without it commits into the data repo would skip the frontmatter
+verification gate.)
 
 After the clone, `origin` still points at the **template** repo, which the user cannot push to. Questions 1–3 below MUST end with `git remote set-url origin <user's own repo>` (create-or-attach), never with the template URL left in place. Skip this step entirely when the directory already exists (states `NO_REMOTE`, `BROKEN`).
 

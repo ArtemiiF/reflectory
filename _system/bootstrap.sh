@@ -163,7 +163,7 @@ echo "==> Installing system skills as symlinks into ${SKILLS_DIR}"
 for skill_dir in "${LOCAL_FORKS}/skills"/*/; do
   skill_name="$(basename "${skill_dir}")"
 
-  # Skip helper dirs (no SKILL.md). _shared/, scripts/, etc.
+  # Guard: only dirs with a SKILL.md are skills.
   src_skill="${skill_dir}SKILL.md"
   if [[ ! -f "${src_skill}" ]]; then continue; fi
 

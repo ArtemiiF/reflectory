@@ -11,6 +11,30 @@ rules, forked plugin skills, and session reflections. The core loop:
    committed and pushed — your config improves monotonically, survives machine
    changes, and travels with you.
 
+## Features
+
+- **`/reflect-session`** — end-of-session harvest: walks back through the live
+  conversation, finds friction points (corrections you made, rules Claude missed,
+  patterns worth codifying), and proposes concrete config changes. Three change
+  categories: CLAUDE.md rules, forks of plugin artefacts, brand-new local skills.
+- **Per-item approval** — every proposed change is approved individually before
+  it touches anything. Nothing lands silently; a rejected finding is logged and dropped.
+- **`/reflect-archive`** — batch reflection over past sessions you never reflected
+  on (largest first), with an **adversarial critic** that re-reads the raw transcript
+  to refute weak findings before they reach you.
+- **Fork tracking with intent logs** — when you fork a plugin skill, the *intent*
+  behind the change is recorded alongside the diff. **`/sync-upstream`** replays
+  those intents on top of a new upstream plugin version: subsumed → retire,
+  still needed → re-apply, conflict → escalate to you.
+- **Deterministic gates** — a pre-commit hook validates rule frontmatter on every
+  commit; scripts (not prose) rebuild the index, digest sessions, and compute
+  rule-usage stats. The prose instructions are advisory; the hooks fire regardless.
+- **Knowledge-class layering** — rules split into portable general discipline (G),
+  orchestrator discipline (K0), your idiolect (K1), and per-machine environment
+  maps (K2), so each machine loads exactly the layers that apply to it.
+- **Git-native persistence** — everything lives in one repo you own; approved
+  changes are committed and pushed, so your config survives machine changes.
+
 ## What's inside
 
 | Path | What it is |
@@ -86,3 +110,7 @@ Every change is per-item approved. Nothing mutates your config silently.
 
 - Claude Code with skills support
 - `git`, `gh` (GitHub CLI) authenticated, `bash`, `python3`
+
+## License
+
+MIT — see [LICENSE](LICENSE).
