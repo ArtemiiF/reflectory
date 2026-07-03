@@ -34,6 +34,8 @@ Phase 0 produces at most: decay findings (→ Phase 6 approval) and misfiring ob
 
 Walk the conversation chronologically. For each turn, record observations grouped into four clusters. **The agent-side signals (B) and the discipline signals (C) are the easiest to miss** because they require no user correction — pretend an external auditor is reading the transcript without context.
 
+A second input feeds Cluster A: the corrections queue (`_local/corrections-queue.jsonl`, captured live by `capture-corrections.py` — see SKILL.md Step 2). Queue entries from other sessions arrive without surrounding context; before using one as an observation, recover its context from that session's transcript if it still exists, and drop the entry if the context is unrecoverable — a bare correction quote fails the observation contract below.
+
 ### Cluster A — User-side signals (visible from user messages)
 
 | # | Type | What it looks like |

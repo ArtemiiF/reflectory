@@ -7,7 +7,8 @@
 # deterministic half: prose can be forgotten, the hook fires on every Stop.
 #
 # Mechanics: counts user messages in the session transcript that contain
-# correction markers (the A1-friction vocabulary from method.md Phase 1).
+# correction markers (the A1-friction vocabulary from method.md Phase 1,
+# shared with capture-corrections.py via friction_markers.py).
 # At >= THRESHOLD distinct correcting messages it blocks the stop once
 # (exit 2 + stderr), so Claude relays the suggestion to the user. A marker
 # file per session guarantees the block happens at most once — no loops
@@ -25,17 +26,12 @@
 import datetime
 import json
 import os
-import re
 import sys
+
+from friction_markers import MARKERS
 
 THRESHOLD = 3
 METRICS = os.path.expanduser("~/.claude/local-forks/_sessions/friction-metrics.tsv")
-MARKERS = re.compile(
-    r"\b(не так|не туда|не надо|не делай|не то|стоп|вернись|убери|откати"
-    r"|that's wrong|not what i)\b"
-    r"|\[Request interrupted by user",
-    re.IGNORECASE,
-)
 
 def upsert_metrics(session_id: str, hits: int, user_msgs: int) -> None:
     """One TSV line per session; the latest Stop wins."""

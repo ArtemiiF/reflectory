@@ -6,6 +6,11 @@
 *.swp
 *~
 
+# Python bytecode — hooks import friction_markers.py from the tracked scripts
+# dir, so the interpreter drops __pycache__/ into the working tree at runtime.
+__pycache__/
+*.pyc
+
 # Local-only experiments
 /scratch/
 /_local/

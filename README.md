@@ -29,6 +29,11 @@ rules, forked plugin skills, and session reflections. The core loop:
 - **Deterministic gates** — a pre-commit hook validates rule frontmatter on every
   commit; scripts (not prose) rebuild the index, digest sessions, and compute
   rule-usage stats. The prose instructions are advisory; the hooks fire regardless.
+- **Live correction capture** — an optional `UserPromptSubmit` hook snapshots
+  correction-bearing prompts («не так», "that's wrong", …) into a local queue the
+  moment they happen; the next `/reflect-session` consumes the queue, so corrections
+  survive even from sessions you never reflected on. Registration is one manual
+  settings.json step (see `_system/scripts/capture-corrections.py` header).
 - **Knowledge-class layering** — rules split into portable general discipline (G),
   orchestrator discipline (K0), your idiolect (K1), and per-machine environment
   maps (K2), so each machine loads exactly the layers that apply to it.

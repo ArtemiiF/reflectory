@@ -235,12 +235,17 @@ if [[ -f "${LOCAL_FORKS}/_system/scripts/pre-commit" && -d "${LOCAL_FORKS}/.git/
 fi
 
 # Step 2.6 — settings.json is machine-local (not in this repo): verify the
-# reflect-reminder Stop hook survived the machine move; registration itself
-# is a one-time manual step (see _system/scripts/reflect-reminder.py header).
-if [[ -f "${LIVE_CLAUDE_DIR}/settings.json" ]] \
-   && ! grep -q "reflect-reminder" "${LIVE_CLAUDE_DIR}/settings.json"; then
-  echo "==> NOTE: reflect-reminder Stop hook is not registered in settings.json."
-  echo "    Add it to hooks.Stop: python3 ${LOCAL_FORKS}/_system/scripts/reflect-reminder.py"
+# hook registrations survived the machine move; registration itself is a
+# one-time manual step (see each script's header for the settings.json shape).
+if [[ -f "${LIVE_CLAUDE_DIR}/settings.json" ]]; then
+  if ! grep -q "reflect-reminder" "${LIVE_CLAUDE_DIR}/settings.json"; then
+    echo "==> NOTE: reflect-reminder Stop hook is not registered in settings.json."
+    echo "    Add it to hooks.Stop: python3 ${LOCAL_FORKS}/_system/scripts/reflect-reminder.py"
+  fi
+  if ! grep -q "capture-corrections" "${LIVE_CLAUDE_DIR}/settings.json"; then
+    echo "==> NOTE: capture-corrections UserPromptSubmit hook is not registered in settings.json."
+    echo "    Add it to hooks.UserPromptSubmit: python3 ${LOCAL_FORKS}/_system/scripts/capture-corrections.py"
+  fi
 fi
 
 if [[ -f "${INSTALLED_JSON}" ]]; then
