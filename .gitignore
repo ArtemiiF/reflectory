@@ -1,0 +1,26 @@
+# Nothing from plugin cache — these are derived state, rewritten by the system
+# and may be deleted by Claude Code's plugin manager after ~7 days.
+
+# OS / editor noise
+.DS_Store
+*.swp
+*~
+
+# Local-only experiments
+/scratch/
+/_local/
+
+# Pre-flight session cache (init-remote.md). Per-machine state, not for git.
+/_meta/.preflight-cache.json
+
+# Explicit machine-id override (detect_machine priority 1). Per-machine, not for git.
+/_meta/machine-id
+
+# Backup files created by bootstrap.sh when overwriting an existing local skill.
+# Timestamp-suffixed (.bak.<UTC>) since the rotation fix — keep both shapes covered
+# so old single-slot .bak files from pre-rotation bootstraps still get ignored.
+*.bak
+*.bak.*
+
+# Per-machine layer selector (set by bootstrap detect_machine). Per-machine, not for git.
+/_tracked/machines/current

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# pre-commit — deterministic verification gate for the local-forks repo.
+#
+# Why a git hook and not only /reflect-session Step 6.2: the prose instruction
+# "run validate-frontmatter.sh before committing" is advisory — the model can
+# forget it. A git hook fires on every commit regardless of who (or what)
+# composes it. Prose teaches, the hook guarantees (dual-circuit enforcement).
+#
+# Checks: YAML frontmatter validity in every tracked *.md (validate-frontmatter.sh).
+# Blocks the commit (exit 1) only on a confirmed artifact failure.
+#
+# Graceful degradation: if the validator script is missing, warn to stderr and
+# pass — the hook's own breakage must never block work (drift visible, not silent).
+#
+# Installed as .git/hooks/pre-commit -> ../../_system/scripts/pre-commit by
+# bootstrap.sh (hooks are not cloneable; the symlink is re-created per machine).
+
+set -uo pipefail
+
+# Validate the repo the commit is happening in (git runs hooks from the repo
+# root), not a hardcoded path — otherwise a clone would validate the wrong tree.
+LOCAL_FORKS="$(git rev-parse --show-toplevel 2>/dev/null || echo "${HOME}/.claude/local-forks")"
+export LOCAL_FORKS
+VALIDATOR="${LOCAL_FORKS}/_system/scripts/validate-frontmatter.sh"
+
+if [[ ! -f "${VALIDATOR}" ]]; then
+  echo "pre-commit: validate-frontmatter.sh not found — frontmatter check skipped this commit." >&2
+  exit 0
+fi
+
+if ! bash "${VALIDATOR}"; then
+  echo >&2
+  echo "pre-commit: frontmatter validation FAILED — commit blocked." >&2
+  echo "Fix the file(s) above and retry. Do not bypass with --no-verify." >&2
+  exit 1
+fi
+
+exit 0
