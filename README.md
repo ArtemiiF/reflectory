@@ -22,6 +22,11 @@ rules, forked plugin skills, and session reflections. The core loop:
 - **`/reflect-archive`** — batch reflection over past sessions you never reflected
   on (largest first), with an **adversarial critic** that re-reads the raw transcript
   to refute weak findings before they reach you.
+- **`/reflect-compress`** — the subtract channel: batch-audits the accumulated
+  rule layer against reality — dormant rules (usage stats), dead path references
+  (filesystem check), contradictions, near-duplicates, verbosity — and proposes
+  per-item-approved reductions. `/reflect-session` grows the config; this keeps
+  it from growing monotonically.
 - **Fork tracking with intent logs** — when you fork a plugin skill, the *intent*
   behind the change is recorded alongside the diff. **`/sync-upstream`** replays
   those intents on top of a new upstream plugin version: subsumed → retire,
@@ -41,6 +46,7 @@ rules, forked plugin skills, and session reflections. The core loop:
 |---|---|
 | `skills/reflect-session/` | The core skill: analyse the current session, propose config improvements, apply approved ones |
 | `skills/reflect-archive/` | Batch reflection over past sessions, with an adversarial critic that re-reads raw transcripts to kill weak findings |
+| `skills/reflect-compress/` | The subtract channel: batch-prune dormant rules, fix dead references, merge duplicates — per-item approved |
 | `skills/sync-upstream/` | Re-apply your tracked skill forks after a plugin updates upstream |
 | `_system/scripts/` | Deterministic plumbing: frontmatter validation, index build, pre-commit gate, session digests |
 | `_system/_shared/` | Metadata schema and remote-init wizard used by the skills |
@@ -94,6 +100,7 @@ starter rules, add to your `~/.claude/CLAUDE.md`:
 - `/reflect-session` — end of a meaty session: harvest improvements from it.
 - `/reflect-archive` — batch-process past sessions you never reflected on.
 - `/sync-upstream` — after a plugin update: re-apply your forks on the new version.
+- `/reflect-compress` — when the rule layer feels bloated: batch-audit and shrink it.
 
 Every change is per-item approved. Nothing mutates your config silently.
 
