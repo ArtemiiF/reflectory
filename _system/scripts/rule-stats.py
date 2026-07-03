@@ -12,6 +12,13 @@
 #      The `[id]` prefix is optional; id-less legacy lines key on a normalised
 #      label so relabel drift no longer splits one rule's history into two.
 #
+# Also reads `retired_ids` from _sessions/*-compress.md frontmatter
+# (/reflect-compress Step 5): a retired id is dropped from the --dormancy feed
+# and the decay table, so a rule deleted by a compress run stops re-surfacing
+# as a forced decay finding in every subsequent /reflect-session. Retirement is
+# dated — decay lines newer than the retirement (rule re-added under the same
+# id) bring the rule back into the feed.
+#
 # Prints: chronological session review (what session, what was proposed,
 # which knowledge class), per-rule decay history, totals, validated share.
 # The session review answers "в какую сторону развивать": which sessions
@@ -28,7 +35,10 @@ import re
 import sys
 from collections import defaultdict
 
-SESSIONS = os.path.expanduser("~/.claude/local-forks/_sessions")
+SESSIONS = os.path.join(
+    os.environ.get("LOCAL_FORKS") or os.path.expanduser("~/.claude/local-forks"),
+    "_sessions",
+)
 FRICTION = os.path.join(SESSIONS, "friction-metrics.tsv")
 
 # A decay line may carry a stable rule-id prefix: `- [k1-foo] <label> — validated`.
@@ -53,6 +63,41 @@ def norm_key(label: str) -> str:
     # "(...)" qualifier (e.g. "(U+FFFD)", "(uv venv ...)"), squeeze whitespace.
     s = re.sub(r"\s*\([^)]*\)\s*$", "", label).lower()
     return re.sub(r"\s+", " ", s).strip()
+
+
+# Both tolerate a trailing `# comment` — the SKILL.md log template puts an
+# inline note on the key line, and hand-edited logs may annotate items.
+RETIRED_KEY = re.compile(r"^retired_ids:\s*(\[\])?\s*(#.*)?$")
+RETIRED_ITEM = re.compile(r"^\s*-\s+([a-z0-9][a-z0-9-]*)\s*(#.*)?$")
+
+
+def load_retirements() -> dict:
+    # key -> date of the latest compress run that retired it. Dates are the
+    # filename prefixes (`<YYYY-MM-DD>T<HH-MM>`), ISO-shaped, so string
+    # comparison orders them correctly against decay-history dates.
+    retired = {}
+    for path in sorted(glob.glob(os.path.join(SESSIONS, "*-compress.md"))):
+        date = os.path.basename(path).split("-compress")[0]
+        in_list = False
+        for line in open(path, encoding="utf-8"):
+            line = line.rstrip("\n")
+            m = RETIRED_KEY.match(line)
+            if m:
+                in_list = m.group(1) is None  # `[]` → empty list, nothing follows
+                continue
+            if in_list:
+                m = RETIRED_ITEM.match(line)
+                if m:
+                    retired[m.group(1)] = max(date, retired.get(m.group(1), ""))
+                else:
+                    in_list = False
+    return retired
+
+
+def is_retired(key, entries, retired) -> bool:
+    # Retired unless a decay line postdates the retirement — a rule re-added
+    # under the same id resumes its history and re-enters the feed.
+    return key in retired and retired[key] >= entries[-1][0]
 
 
 def consecutive_dormant(entries) -> int:
@@ -153,12 +198,17 @@ def main() -> int:
             del history[legacy]
             labels.pop(legacy, None)
 
+    retired = load_retirements()
+
     # --dormancy: machine-readable feed for /reflect-session Phase 0.
     # One line per audited rule, `key<TAB>N<TAB>label`, sorted by N desc.
     # Phase 0 turns any N>=5 into a forced decay-removal finding.
+    # Retired ids (see load_retirements) are excluded — already pruned by a
+    # compress run, they must not re-surface as decay findings.
     if dormancy_mode:
         rows = sorted(
-            ((consecutive_dormant(h), k) for k, h in history.items()),
+            ((consecutive_dormant(h), k) for k, h in history.items()
+             if not is_retired(k, h, retired)),
             key=lambda r: (-r[0], r[1]),
         )
         for n, key in rows:
@@ -223,12 +273,18 @@ def main() -> int:
         return 0
 
     counts = defaultdict(int)
+    n_retired = 0
     print(f"{'rule':<55} {'last status':<14} audits")
     for key in sorted(history, key=lambda k: labels[k]):
         entries = history[key]
+        if is_retired(key, entries, retired):
+            n_retired += 1
+            continue  # pruned by /reflect-compress — out of the live trend
         last = entries[-1][1]
         counts[re.sub(r"\(\d+\)", "", last)] += 1
         print(f"{labels[key][:54]:<55} {last:<14} {len(entries)}")
+    if n_retired:
+        print(f"(+ {n_retired} retired rule(s) via /reflect-compress — hidden)")
 
     total_rules = sum(counts.values())
     validated_share = counts["validated"] / total_rules * 100
