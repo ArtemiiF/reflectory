@@ -69,7 +69,7 @@ Inside Claude Code:
 /plugin install reflectory@reflectory
 ```
 
-Skills become available as `/reflect-session`, `/reflect-archive`, `/sync-upstream`.
+Skills become available as `/reflect-session`, `/reflect-archive`, `/reflect-compress`, `/sync-upstream`.
 On first run, `/reflect-session` walks you through a one-time init wizard: it
 clones this repo to `~/.claude/local-forks` (your personal data repo — approved
 changes land and get committed there) and points `origin` at your own private
