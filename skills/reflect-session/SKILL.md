@@ -51,6 +51,8 @@ Do not silently mix sources. Tell the user which source is in scope.
 
 Open and read `method.md` at `~/.claude/local-forks/skills/reflect-session/method.md`. This path exists in both install modes: the init wizard (Step 0) clones the repo there, and bootstrap installs additionally expose the same file via the symlink `~/.claude/skills/reflect-session/method.md` — single source of truth either way. Execute its seven phases (0–6) in order:
 
+Before Phase 0, load the **corrections queue** if it exists: `~/.claude/local-forks/_local/corrections-queue.jsonl` — one JSON line per correction-bearing prompt, captured live by the `capture-corrections.py` UserPromptSubmit hook (possibly from sessions that were never reflected on). Entries whose `session_id` differs from the current session are Phase 1 observation candidates the current transcript cannot show; entries from the current session duplicate what the transcript already contains and only corroborate. A queue entry is a **candidate, not a finding** — it still passes the full Phase 1 evidence bar (quote, context, expected action) and Phase 2 generalisability filter; an entry whose surrounding context is unrecoverable is dropped. A missing or empty queue is normal (the hook may not be registered).
+
 0. **Rule efficacy review (decay check)** — audit A-rules applied by past runs against this session: validated / dormant(N) / misfiring. Dormancy ≥5 → decay finding (propose removal/demotion, normal approval flow); misfiring → observation for Phase 1. Max 2 decay findings per run.
 1. **Observe** — eight categories of user-side signal (friction, re-routing, re-clarification, unprompted user help, decision reversal, explicit preference, positive surprise, idiolect gap) plus agent-side, protocol and positive clusters. Each observation requires a quote, turn pointer, agent action, expected action — partial observations are dropped.
 2. **Filter for generalisability** — only keep observations whose trigger and fix describe in plain language and apply beyond today's task.
@@ -179,13 +181,19 @@ Before composing the commit:
    ```
    Exits non-zero on any malformed YAML frontmatter. If it fails, do NOT commit — fix the offending file first and re-run.
 
-3. Bump the push timestamp so it ships in the same commit (no amend, no force-push):
+3. Drain the corrections queue — every entry was either promoted to a finding or considered and dropped in Step 2, so the buffer is consumed:
+   ```
+   rm -f ~/.claude/local-forks/_local/corrections-queue.jsonl
+   ```
+   The queue is a gitignored working buffer, not data: losing it costs at most one round of hints, and leaving it would re-surface the same candidates every run. Skip this step if Step 2 never loaded the queue (missing/empty file, or the run was aborted before Phase 1).
+
+4. Bump the push timestamp so it ships in the same commit (no amend, no force-push):
    ```
    bash ~/.claude/local-forks/_system/scripts/update-last-push.sh
    ```
    Writes the current UTC into `_meta/remote.json:last_push_ok_at`. Stage `_meta/remote.json` along with the other approved changes — one commit per pipeline.
 
-Single git commit summarising all approved findings. Includes everything touched in Step 5, the Step 5.5 session log, and the Step 6.3 bumped `remote.json`. Example message:
+Single git commit summarising all approved findings. Includes everything touched in Step 5, the Step 5.5 session log, and the Step 6.4 bumped `remote.json`. Example message:
 
 ```
 reflect: <N> findings — <short labels>
