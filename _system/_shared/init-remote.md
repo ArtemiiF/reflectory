@@ -2,7 +2,7 @@
 
 Shared library used by `/reflect-session` and `/sync-upstream`. Not a standalone slash-command. Both skills run the pre-flight algorithm below at step 0 and, if needed, walk the user through the init wizard before continuing.
 
-> **Access pattern.** This file lives at `~/.claude/local-forks/_system/_shared/init-remote.md` and is **not copied** into `~/.claude/skills/` by `bootstrap.sh` — it has no `SKILL.md`, so the skill-installation loop skips it (see `_system/bootstrap.sh:49-56`). Skills reference it by **absolute path** rather than relative path, because the relative path would resolve against `~/.claude/skills/<skill>/` post-bootstrap and break. The canonical local-forks location (`~/.claude/local-forks/`) is guaranteed to exist after the user has cloned the repo and run bootstrap, so the absolute path always resolves.
+> **Access pattern.** This file lives at `~/.claude/local-forks/_system/_shared/init-remote.md` and is **not copied** into `~/.claude/skills/` by `bootstrap.sh` — it has no `SKILL.md`, so the skill-installation loop skips it. Skills reference it by **absolute path** rather than relative path, because the relative path would resolve against `~/.claude/skills/<skill>/` post-bootstrap (or against the plugin cache, for marketplace installs) and break. The canonical local-forks location (`~/.claude/local-forks/`) is guaranteed to exist after wizard step 0 below, so the absolute path always resolves.
 
 ## When to run
 
@@ -28,7 +28,17 @@ Run in order. The first branch that matches wins.
 
 ## Init wizard
 
-Three sequential questions via `AskUserQuestion`. Each question is independent; do not bundle decisions.
+Step 0 seeds the working tree if needed; then three sequential questions via `AskUserQuestion`. Each question is independent; do not bundle decisions.
+
+### Step 0 — Seed the working tree (only when state is `NOT_INITIALIZED`)
+
+`~/.claude/local-forks/` does not exist yet — clone the template repo to seed the scripts, shared libraries, and layout the skills depend on:
+
+```bash
+git clone https://github.com/ArtemiiF/reflectory.git ~/.claude/local-forks
+```
+
+After the clone, `origin` still points at the **template** repo, which the user cannot push to. Questions 1–3 below MUST end with `git remote set-url origin <user's own repo>` (create-or-attach), never with the template URL left in place. Skip this step entirely when the directory already exists (states `NO_REMOTE`, `BROKEN`).
 
 ### Question 1 — Mode
 

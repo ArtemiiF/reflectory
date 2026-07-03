@@ -49,7 +49,7 @@ Do not silently mix sources. Tell the user which source is in scope.
 
 ### Step 2. Extract findings using the reflection method
 
-Open and read `method.md` at `~/.claude/skills/reflect-session/method.md` (a symlink to `~/.claude/local-forks/_system/reflect-session/method.md` — single source of truth, no dual-location to choose between). Execute its seven phases (0–6) in order:
+Open and read `method.md` at `~/.claude/skills/reflect-session/method.md` (a symlink to `~/.claude/local-forks/skills/reflect-session/method.md` — single source of truth, no dual-location to choose between). Execute its seven phases (0–6) in order:
 
 0. **Rule efficacy review (decay check)** — audit A-rules applied by past runs against this session: validated / dormant(N) / misfiring. Dormancy ≥5 → decay finding (propose removal/demotion, normal approval flow); misfiring → observation for Phase 1. Max 2 decay findings per run.
 1. **Observe** — eight categories of user-side signal (friction, re-routing, re-clarification, unprompted user help, decision reversal, explicit preference, positive surprise, idiolect gap) plus agent-side, protocol and positive clusters. Each observation requires a quote, turn pointer, agent action, expected action — partial observations are dropped.

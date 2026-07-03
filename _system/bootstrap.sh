@@ -4,7 +4,7 @@
 # Run after `git clone <remote> ~/.claude/local-forks`.
 #
 # What it does:
-#   1. Symlink each ~/.claude/local-forks/_system/<skill>/*.md (SKILL.md + method.md
+#   1. Symlink each ~/.claude/local-forks/skills/<skill>/*.md (SKILL.md + method.md
 #      + any other reference files) into ~/.claude/skills/<skill>/ so the system
 #      skills are fully invocable AND any edit through the live path flows back
 #      to the source of truth without a second copy to keep in sync.
@@ -160,7 +160,7 @@ mkdir -p "${SKILLS_DIR}"
 
 echo "==> Installing system skills as symlinks into ${SKILLS_DIR}"
 
-for skill_dir in "${LOCAL_FORKS}/_system"/*/; do
+for skill_dir in "${LOCAL_FORKS}/skills"/*/; do
   skill_name="$(basename "${skill_dir}")"
 
   # Skip helper dirs (no SKILL.md). _shared/, scripts/, etc.

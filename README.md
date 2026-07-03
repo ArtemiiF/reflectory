@@ -15,9 +15,9 @@ rules, forked plugin skills, and session reflections. The core loop:
 
 | Path | What it is |
 |---|---|
-| `_system/reflect-session/` | The core skill: analyse the current session, propose config improvements, apply approved ones |
-| `_system/reflect-archive/` | Batch reflection over past sessions, with an adversarial critic that re-reads raw transcripts to kill weak findings |
-| `_system/sync-upstream/` | Re-apply your tracked skill forks after a plugin updates upstream |
+| `skills/reflect-session/` | The core skill: analyse the current session, propose config improvements, apply approved ones |
+| `skills/reflect-archive/` | Batch reflection over past sessions, with an adversarial critic that re-reads raw transcripts to kill weak findings |
+| `skills/sync-upstream/` | Re-apply your tracked skill forks after a plugin updates upstream |
 | `_system/scripts/` | Deterministic plumbing: frontmatter validation, index build, pre-commit gate, session digests |
 | `_system/_shared/` | Metadata schema and remote-init wizard used by the skills |
 | `_tracked/general-rules.md` | Starter set of universal agent-discipline rules (class G), harvested from real sessions |
@@ -25,28 +25,45 @@ rules, forked plugin skills, and session reflections. The core loop:
 
 ## Install
 
+### Option A — plugin marketplace (recommended)
+
+Inside Claude Code:
+
+```
+/plugin marketplace add ArtemiiF/reflectory
+/plugin install reflectory@reflectory
+```
+
+Skills become available as `/reflect-session`, `/reflect-archive`, `/sync-upstream`.
+On first run, `/reflect-session` walks you through a one-time init wizard: it
+clones this repo to `~/.claude/local-forks` (your personal data repo — approved
+changes land and get committed there) and points `origin` at your own private
+GitHub repo. Don't run `bootstrap.sh` in this mode — the plugin already provides
+the skills.
+
+### Option B — clone + bootstrap (no marketplace)
+
 ```bash
 git clone https://github.com/ArtemiiF/reflectory.git ~/.claude/local-forks
 ~/.claude/local-forks/_system/bootstrap.sh
 ```
 
-The clone path `~/.claude/local-forks` is load-bearing — all skills and scripts
-default to it (overridable via the `LOCAL_FORKS` env var).
-
-Then add to your `~/.claude/CLAUDE.md`:
-
-```markdown
-@local-forks/_tracked/general-rules.md
-```
-
-Point the repo at your own remote (the skills push approved changes there):
+Then point the repo at your own remote (the skills push approved changes there):
 
 ```bash
 cd ~/.claude/local-forks
 git remote set-url origin <your-fork-or-new-repo-url>
 ```
 
-Or just fork this repo on GitHub and clone your fork instead.
+### Either way
+
+The path `~/.claude/local-forks` is load-bearing — all skills and scripts
+default to it (overridable via the `LOCAL_FORKS` env var). To pick up the
+starter rules, add to your `~/.claude/CLAUDE.md`:
+
+```markdown
+@local-forks/_tracked/general-rules.md
+```
 
 ## Daily use
 

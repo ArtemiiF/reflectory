@@ -103,7 +103,7 @@ If the work list is empty: report «all forks up to date», exit.
 
 If `upstream.new.md` is missing (artefact removed in the new upstream), drop into the special row in § Failure handling instead of running the method.
 
-**Step 4b — Open and read `method.md`** (located at `~/.claude/local-forks/_system/sync-upstream/method.md`) and execute its seven phases per fork:
+**Step 4b — Open and read `method.md`** (located at `~/.claude/local-forks/skills/sync-upstream/method.md`) and execute its seven phases per fork:
 
 1. **Parse intent log** — extract Why / Where / Effect / Re-apply rule from each `## Improvement #N`; mark malformed entries.
 2. **Classify** each Improvement as `subsumed` / `active` / `conflict`, with a quoted upstream span as evidence for the first two.

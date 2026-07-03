@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "reflectory",
+  "description": "Self-improvement harness for Claude Code: reflect on sessions, harvest config improvements, keep them in git.",
+  "owner": {
+    "name": "Artemii Filanovskii",
+    "url": "https://github.com/ArtemiiF"
+  },
+  "plugins": [
+    {
+      "name": "reflectory",
+      "description": "Reflect on Claude Code sessions and harvest per-item-approved config improvements into a personal git repo. Skills: /reflect-session, /reflect-archive, /sync-upstream.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
