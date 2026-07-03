@@ -23,7 +23,7 @@ The analytical scaffolding is in `method.md` (five audit phases). The system lay
 
 ## Inputs
 
-- Rule files. No argument → the tracked layer: `~/.claude/local-forks/_tracked/general-rules.md` plus `~/.claude/local-forks/_tracked/CLAUDE.md` (and its live mirror `~/.claude/CLAUDE.md`) if present. Argument → that file only.
+- Rule files. No argument → the whole tracked layer: every rule `.md` under `~/.claude/local-forks/_tracked/` (including `machines/*/` layers and lazy reference files like `k2-environment.md`). Argument → that file only.
 - `python3 ~/.claude/local-forks/_system/scripts/rule-stats.py --dormancy` — the dormancy feed.
 - `python3 ~/.claude/local-forks/_system/scripts/check-stale-refs.py <files>` — the dead-pointer feed.
 
@@ -55,7 +55,7 @@ One `AskUserQuestion` per finding — never bundled:
 
 ### Step 4. Apply approved findings
 
-- Edit the rule file in place. For rules living in `~/.claude/CLAUDE.md`: apply to BOTH the live file and `_tracked/CLAUDE.md` mirror — one approval covers both writes; fail one, roll back the other.
+- Edit the layer file in place — it is the single source (the live `~/.claude/CLAUDE.md` is a thin root that `@import`s the layer files, so the edit is live from the next session). Legacy setup where the live `~/.claude/CLAUDE.md` still duplicates a tracked file: apply to BOTH copies in one approval — fail one, roll back the other.
 - **Id continuity:** a surviving (tightened / merged-into) rule keeps its `<!-- id: ... -->` comment unchanged — the decay aggregator joins on it. A merged-away or deleted rule's id goes into the session log's `retired_ids` (Step 5); `rule-stats.py` reads compress logs and drops retired ids from the `--dormancy` feed and the decay table — without this, a deleted rule's trailing dormant run would re-surface as a forced decay finding in every subsequent `/reflect-session`. Retirement is dated: decay lines newer than it (a rule re-added under the same id) bring the id back into the feed.
 - No backup files: the repo IS the backup — every state is one `git revert` away.
 
@@ -96,5 +96,5 @@ Applied vs skipped vs discarded; net line-count delta of the rule layer («−41
 |---|---|
 | Pre-flight not READY | Stop, hand off to the init wizard. |
 | `rule-stats.py --dormancy` empty (no history yet) | Phase D legitimately yields nothing — proceed with X/C/M/V only. |
-| Live `~/.claude/CLAUDE.md` and `_tracked/CLAUDE.md` mirror differ before the run | Surface the drift and stop — reconcile first (manual or /reflect-session), compressing a forked pair doubles the divergence. |
+| Legacy mirror setup: live `~/.claude/CLAUDE.md` duplicates `_tracked/CLAUDE.md` and they differ before the run | Surface the drift and stop — reconcile first (manual or /reflect-session), compressing a forked pair doubles the divergence. |
 | Push fails after one retry | Local commit stays; surface the error and the manual push command. |
