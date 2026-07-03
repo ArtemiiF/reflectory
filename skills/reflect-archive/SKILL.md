@@ -72,7 +72,7 @@ For each selected session, spawn **one** sub-agent (general-purpose), in paralle
 prompt instructs it to:
 
 1. Run `python3 ~/.claude/local-forks/_system/scripts/session-digest.py <raw-path> --out <scratch>/<uuid>.digest.txt`.
-2. Read the digest (chunked if large) and execute `~/.claude/skills/reflect-session/method.md`
+2. Read the digest (chunked if large) and execute `~/.claude/local-forks/skills/reflect-session/method.md`
    **Phases 0–5** against it.
 3. Return findings in the structured contract from `method.md` Phase R (`evidence` with `[E…]`
    pointer, `cluster`, `category` + scope/class, `draft`, `self_test`). Propose only — apply

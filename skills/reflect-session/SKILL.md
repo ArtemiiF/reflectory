@@ -49,7 +49,7 @@ Do not silently mix sources. Tell the user which source is in scope.
 
 ### Step 2. Extract findings using the reflection method
 
-Open and read `method.md` at `~/.claude/skills/reflect-session/method.md` (a symlink to `~/.claude/local-forks/skills/reflect-session/method.md` — single source of truth, no dual-location to choose between). Execute its seven phases (0–6) in order:
+Open and read `method.md` at `~/.claude/local-forks/skills/reflect-session/method.md`. This path exists in both install modes: the init wizard (Step 0) clones the repo there, and bootstrap installs additionally expose the same file via the symlink `~/.claude/skills/reflect-session/method.md` — single source of truth either way. Execute its seven phases (0–6) in order:
 
 0. **Rule efficacy review (decay check)** — audit A-rules applied by past runs against this session: validated / dormant(N) / misfiring. Dormancy ≥5 → decay finding (propose removal/demotion, normal approval flow); misfiring → observation for Phase 1. Max 2 decay findings per run.
 1. **Observe** — eight categories of user-side signal (friction, re-routing, re-clarification, unprompted user help, decision reversal, explicit preference, positive surprise, idiolect gap) plus agent-side, protocol and positive clusters. Each observation requires a quote, turn pointer, agent action, expected action — partial observations are dropped.
@@ -161,7 +161,7 @@ batch).
 
 One line per audited rule. The `[<rule-id>]` prefix is the aggregator's join key (legacy id-less rules fall back to their normalised label). The dormancy counter `N` is **derived from the whole history** by `rule-stats.py --dormancy`, not carried from this one section — so a missing section lowers the trend's resolution but no longer resets the count to zero.
 
-The existing `_sessions/2026-05-16-reflect.md` is the reference shape — match its layout exactly so the file remains greppable for cross-session pattern analysis.
+The frontmatter and finding-block templates above are the reference shape — match them exactly so the file remains greppable for cross-session pattern analysis (and consistent with any earlier reports already in `_sessions/`).
 
 ### Step 6. Commit and push
 
