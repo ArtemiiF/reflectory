@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "reflectory",
-      "description": "Reflect on Claude Code sessions and harvest per-item-approved config improvements into a personal git repo. Skills: /reflect-session, /reflect-archive, /sync-upstream.",
+      "description": "Reflect on Claude Code sessions and harvest per-item-approved config improvements into a personal git repo. Skills: /reflect-session, /reflect-archive, /reflect-compress, /sync-upstream, /pull-forks.",
       "source": "./",
       "category": "productivity"
     }
