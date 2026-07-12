@@ -31,6 +31,11 @@ rules, forked plugin skills, and session reflections. The core loop:
   behind the change is recorded alongside the diff. **`/sync-upstream`** replays
   those intents on top of a new upstream plugin version: subsumed → retire,
   still needed → re-apply, conflict → escalate to you.
+- **`/pull-forks`** — the multi-machine propagation direction: pull the data repo
+  and install what arrived onto *this* machine — new skills into `~/.claude/skills/`
+  (copy or symlink, matching how the machine was bootstrapped), changed hook
+  scripts re-wired in settings.json, tracked CLAUDE.md layers verified live.
+  Per-item approved, pull-only (never commits).
 - **Deterministic gates** — a pre-commit hook validates rule frontmatter on every
   commit; scripts (not prose) rebuild the index, digest sessions, and compute
   rule-usage stats. The prose instructions are advisory; the hooks fire regardless.
@@ -53,6 +58,7 @@ rules, forked plugin skills, and session reflections. The core loop:
 | `skills/reflect-archive/` | Batch reflection over past sessions, with an adversarial critic that re-reads raw transcripts to kill weak findings |
 | `skills/reflect-compress/` | The subtract channel: batch-prune dormant rules, fix dead references, merge duplicates — per-item approved |
 | `skills/sync-upstream/` | Re-apply your tracked skill forks after a plugin updates upstream |
+| `skills/pull-forks/` | Pull the data repo and install what arrived onto this machine (skills, hooks, tracked layers) |
 | `_system/scripts/` | Deterministic plumbing: frontmatter validation, index build, pre-commit gate, session digests |
 | `_system/_shared/` | Metadata schema and remote-init wizard used by the skills |
 | `_tracked/general-rules.md` | Starter set of universal agent-discipline rules (class G), harvested from real sessions |
@@ -69,7 +75,7 @@ Inside Claude Code:
 /plugin install reflectory@reflectory
 ```
 
-Skills become available as `/reflect-session`, `/reflect-archive`, `/reflect-compress`, `/sync-upstream`.
+Skills become available as `/reflect-session`, `/reflect-archive`, `/reflect-compress`, `/sync-upstream`, `/pull-forks`.
 On first run, `/reflect-session` walks you through a one-time init wizard: it
 clones this repo to `~/.claude/local-forks` (your personal data repo — approved
 changes land and get committed there) and points `origin` at your own private
@@ -105,6 +111,8 @@ starter rules, add to your `~/.claude/CLAUDE.md`:
 - `/reflect-session` — end of a meaty session: harvest improvements from it.
 - `/reflect-archive` — batch-process past sessions you never reflected on.
 - `/sync-upstream` — after a plugin update: re-apply your forks on the new version.
+- `/pull-forks` — on your other machine, after pushing from the first one: pull
+  and wire in what arrived (skills, hooks, tracked layers).
 - `/reflect-compress` — when the rule layer feels bloated: batch-audit and shrink it.
 
 Every change is per-item approved. Nothing mutates your config silently.
