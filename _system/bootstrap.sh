@@ -8,9 +8,10 @@
 #      + any other reference files) into ~/.claude/skills/<skill>/ so the system
 #      skills are fully invocable AND any edit through the live path flows back
 #      to the source of truth without a second copy to keep in sync.
-#   2. Restore ~/.claude/CLAUDE.md from _tracked/CLAUDE.md if the tracked copy
-#      exists and the live file is missing. Existing live file is preserved —
-#      use /sync-upstream or manual reconciliation to merge.
+#   2. Restore top-level ~/.claude/ files from _tracked/: CLAUDE.md and RTK.md
+#      are copied if the live file is missing (existing live file preserved —
+#      use /sync-upstream or manual reconciliation to merge); statusline.sh is
+#      symlinked instead so live edits flow back to source-of-truth.
 #   3. For every forked plugin artefact under <marketplace>/<plugin>/...:
 #        - read baseline_upstream_version from <plugin>/_meta.json
 #        - check ~/.claude/plugins/installed_plugins.json for the installed version
@@ -223,6 +224,16 @@ mkdir -p "${LIVE_CLAUDE_DIR}"
 restore_tracked_file "${TRACKED_DIR}/CLAUDE.md" "${LIVE_CLAUDE_DIR}/CLAUDE.md" "CLAUDE.md"
 restore_tracked_file "${TRACKED_DIR}/RTK.md"    "${LIVE_CLAUDE_DIR}/RTK.md"    "RTK.md"
 
+# statusline.sh is referenced by settings.json:statusLine.command as an absolute
+# ~/.claude/ path. Unlike CLAUDE.md/RTK.md it is symlinked (not copied), so live
+# edits flow back to _tracked/ source-of-truth without a re-copy step — same
+# single-source-of-truth contract as the system skills above.
+if [[ -f "${TRACKED_DIR}/statusline.sh" ]]; then
+  chmod +x "${TRACKED_DIR}/statusline.sh"
+  install_skill_symlink "${TRACKED_DIR}/statusline.sh" "${LIVE_CLAUDE_DIR}/statusline.sh"
+  echo "==> Linked statusline.sh → _tracked/statusline.sh"
+fi
+
 # Step 2.5 — install the repo's deterministic pre-commit gate. Git hooks are not
 # cloneable, so the tracked script is linked into .git/hooks on every bootstrap.
 # See _system/scripts/pre-commit for why this exists (dual-circuit enforcement:
@@ -245,6 +256,10 @@ if [[ -f "${LIVE_CLAUDE_DIR}/settings.json" ]]; then
   if ! grep -q "capture-corrections" "${LIVE_CLAUDE_DIR}/settings.json"; then
     echo "==> NOTE: capture-corrections UserPromptSubmit hook is not registered in settings.json."
     echo "    Add it to hooks.UserPromptSubmit: python3 ${LOCAL_FORKS}/_system/scripts/capture-corrections.py"
+  fi
+  if [[ -f "${TRACKED_DIR}/statusline.sh" ]] && ! grep -q "statusline.sh" "${LIVE_CLAUDE_DIR}/settings.json"; then
+    echo "==> NOTE: statusLine is not registered in settings.json."
+    echo "    Add: statusLine.command = bash ${LIVE_CLAUDE_DIR}/statusline.sh"
   fi
 fi
 

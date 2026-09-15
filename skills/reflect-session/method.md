@@ -13,14 +13,15 @@ Every applied A-finding grows the always-on global CLAUDE.md; a rule whose trigg
    python3 ~/.claude/local-forks/_system/scripts/rule-stats.py --dormancy
    ```
    It emits one `key<TAB>N<TAB>label` line per audited rule, sorted by N desc. **N is computed from the full history** (length of the trailing run of `dormant` marks for that rule's stable id / normalised label), NOT carried forward from the previous log. A single missing `## Decay check` section therefore no longer resets the count — this is what keeps the prune channel alive (the add channel runs every session; the counter must not silently reset under it).
-2. For each rule applied **≥3 reflect-runs ago**, check against the current session source:
+2. **Exclusion:** rules already demoted to lazy reference files (e.g. `k0-discipline.md` — the body carries a `**Demoted:**` line) are excluded from the dormancy audit and from future `## Decay check` sections — demotion is the terminal decay state; expected-dormant is not a signal.
+3. For each rule applied **≥3 reflect-runs ago**, check against the current session source:
    - Did its trigger condition occur this session?
    - If yes — did the rule hold (the mistake it encodes did not happen)?
-3. Classify each audited rule:
+4. Classify each audited rule:
    - **validated** — trigger occurred, behaviour correct. Record; no action.
    - **dormant(N)** — trigger not seen this session. N = the aggregate value from step 1, +1 for this run's dormant mark.
    - **misfiring** — trigger occurred but the rule did not help, or actively hurt. Becomes a regular observation: feed it into Phase 1 with the transcript span as evidence.
-4. **Forced decay finding.** Any rule whose aggregate **dormancy ≥5** MUST become a decay finding this run (up to the 2-finding cap, highest N first) — propose, as a normal Category A approval item, removing it from always-on CLAUDE.md (delete, merge into an adjacent rule, or demote to a lazily-read reference file). Per-finding approval applies; never silently delete. The aggregate makes this non-optional: if `--dormancy` reports N≥5, the run does not finish without surfacing the removal proposal.
+5. **Forced decay finding.** Any rule whose aggregate **dormancy ≥5** MUST become a decay finding this run (up to the 2-finding cap, highest N first) — propose, as a normal Category A approval item, removing it from always-on CLAUDE.md (delete, merge into an adjacent rule, or demote to a lazily-read reference file). Per-finding approval applies; never silently delete. The aggregate makes this non-optional: if `--dormancy` reports N≥5, the run does not finish without surfacing the removal proposal.
 
 Caps and recording:
 
