@@ -1,6 +1,6 @@
 {
   "name": "reflectory",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Self-improvement harness for Claude Code and Codex: reflect on sessions, harvest per-item-approved config improvements, keep them in a personal git repo.",
   "author": {
     "name": "Artemii Filanovskii",
