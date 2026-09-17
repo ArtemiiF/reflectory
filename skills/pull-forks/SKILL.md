@@ -73,10 +73,11 @@ git -C ~/.claude/local-forks diff --name-status ORIG_HEAD..HEAD
 | Path pattern | Class | Local action |
 |---|---|---|
 | `_tracked/CLAUDE.md` | tracked mirror | Step 3 — live-vs-tracked check |
-| `_tracked/*.md` (shared, general-rules, k0/k2 layers) | @-imported layer | none — live immediately via CLAUDE.md `@`-imports; just verify the import line exists |
+| `_tracked/*.md` (shared, general-rules, k0/k2 layers) | @-imported layer | Claude Code: none — live immediately via CLAUDE.md `@`-imports; just verify the import line exists. Codex present on this machine: re-project (Step 4b) |
 | `_tracked/machines/<id>/**` | other machine's layer | skip unless `<id>` == this machine's `_meta/machine-id` (or `machines/current` symlink target) |
 | `_tracked/hooks/*` | hook script | Step 5 — hook wiring |
-| `skills/<name>/**` | skill | Step 4 — skill install |
+| `skills/<name>/SKILL.md`, `*.md` | skill | Step 4 — skill install |
+| `skills/<name>/install.json` | skill targeting manifest | Step 4 — re-resolve; may add or drop a skill on this machine |
 | `_system/**`, `_sessions/**`, `_meta/**`, `INDEX.md` | plumbing / reports | none |
 
 Empty install list → report «pulled N commits, nothing needs machine-local wiring», exit.
@@ -95,23 +96,80 @@ CLAUDE.md silently — it is load-bearing for every session.
 
 ### Step 4. Skill install
 
-**Detect this machine's install pattern first** — do not assume:
+**Resolve the target set first — do not install every skill in the repo.** Two
+axes decide it: machine and agent, declared per skill in `skills/<name>/install.json`
+(schema: `_system/_shared/install-manifest.md`). One resolver serves both this
+skill and `bootstrap.sh`, so the two installers cannot drift:
 
 ```
-find ~/.claude/skills -maxdepth 1 -type l   # any symlinks into local-forks?
+~/.claude/local-forks/_system/scripts/skill-targets.sh
 ```
+
+Output is one TSV line per skill: `<name>  install|skip  <agents>  <reason>`.
+The resolver is shared with `bootstrap.sh`, so the two installers agree on WHICH
+skills belong here; they still write different shapes (per-file symlinks vs a
+whole-directory symlink), which the mode probe below has to account for.
+Act only on `install` rows. Report the `skip` rows — a skill the user expects to
+see missing from the list usually means a wrong machine id in its manifest, not
+a pull problem.
+
+A pulled skill that is installed here but no longer resolves to `install` (the
+manifest narrowed its machines) → surface it, ask before removing. Same rule as
+a deleted skill: never delete without approval.
+
+**Then detect this machine's install pattern** — do not assume:
+
+```
+find ~/.claude/skills -maxdepth 1 -type l              # whole-directory symlinks
+find ~/.claude/skills -maxdepth 2 -name SKILL.md -type l   # per-file symlinks
+```
+
+Both count as symlink mode. Checking only the first misses machines set up by
+`bootstrap.sh`, and then copy mode would `cp` over a symlinked `SKILL.md` —
+writing straight through into `local-forks` and corrupting the source of truth.
+
+**Destination depends on the agent column of the resolver row**, not on habit:
+
+| Resolved agent | Install root |
+|---|---|
+| `claude` | `~/.claude/skills/<name>/` |
+| `codex` | `$CODEX_HOME/skills/<name>/` (default `~/.codex/skills/`) |
+
+A row reading `claude,codex` installs into both. Writing a codex-targeted skill
+into the Claude root is the drift this shared resolver exists to prevent.
 
 - Symlinks present pointing into `local-forks` → **symlink mode** (bootstrap.sh
-  machines): new skill → `ln -sfn ~/.claude/local-forks/skills/<name> ~/.claude/skills/<name>`;
+  machines): new skill → `ln -sfn ~/.claude/local-forks/skills/<name> <install-root>/<name>`;
   updated skill → nothing to do, the symlink already sees the new content.
 - No such symlinks → **copy mode**: for each new/changed skill compare the
-  currently installed copy against the PRE-pull repo version (`git show ORIG_HEAD:skills/<name>/SKILL.md`):
+  currently installed copy (in the install root for that agent) against the
+  PRE-pull repo version (`git show ORIG_HEAD:skills/<name>/SKILL.md`):
   - installed copy == pre-pull version → clean fast-forward, overwrite the copy;
   - installed copy differs → the user edited it locally → **conflict**: show both
     diffs, ask (`Take pulled version` / `Keep local` / `Skip`). Never clobber local edits.
   - not installed at all → new skill, install after approval.
 - Skill DELETED upstream (`D` status) → surface, ask whether to remove the local
   install. Never delete without approval.
+
+### Step 4b. Codex rule layer
+
+Only when this machine has a Codex home (`~/.codex`, or `$CODEX_HOME`). Codex has
+no `@`-import: text reaches the model only if it sits in `AGENTS.md` itself, so
+the tracked layers are concatenated into one generated file.
+
+```
+~/.claude/local-forks/_system/scripts/build-agents-md.sh --check   # stale?
+~/.claude/local-forks/_system/scripts/build-agents-md.sh           # re-project
+```
+
+`--check` compares the sha256 of the current layers against the one stamped in
+the generated file, so a pulled rule change that was never re-projected is caught
+by the script, not by memory. Run it after every pull that touched `_tracked/`.
+
+The script refuses to write when the projection exceeds Codex's
+`project_doc_max_bytes` (default 32768 — over it Codex truncates the project doc
+silently). It prints the exact line to add to `~/.codex/config.toml`; that edit
+is the user's call, so surface it rather than writing the config yourself.
 
 ### Step 5. Hook wiring
 

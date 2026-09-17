@@ -7,7 +7,11 @@
 #   1. Symlink each ~/.claude/local-forks/skills/<skill>/*.md (SKILL.md + method.md
 #      + any other reference files) into ~/.claude/skills/<skill>/ so the system
 #      skills are fully invocable AND any edit through the live path flows back
-#      to the source of truth without a second copy to keep in sync.
+#      to the source of truth without a second copy to keep in sync. Only skills
+#      this machine and agent are targeted by are installed — resolved from
+#      skills/<name>/install.json by _system/scripts/skill-targets.sh (schema:
+#      _system/_shared/install-manifest.md). Pass --prune to also remove skills
+#      this repo installed earlier and no longer targets.
 #   2. Restore top-level ~/.claude/ files from _tracked/: CLAUDE.md and RTK.md
 #      are copied if the live file is missing (existing live file preserved —
 #      use /sync-upstream or manual reconciliation to merge); statusline.sh is
@@ -20,8 +24,12 @@
 #   4. Print a summary; tell the user to run /reload-plugins and (if needed) /sync-upstream.
 #
 # Constraints:
-#   - Idempotent. Re-running with no changes does nothing destructive.
-#   - Never writes outside ~/.claude/ .
+#   - Idempotent. Re-running with no changes does nothing destructive. The one
+#     exception is opt-in: --prune removes skills this repo installed earlier and
+#     no longer targets at this machine/agent (symlinks only; backups survive).
+#   - Writes only under ~/.claude/ and, when a Codex home exists, under
+#     $CODEX_HOME (skills/<name>/ and AGENTS.md — the latter never over a
+#     hand-written file; see build-agents-md.sh).
 #   - Never touches ~/.gitconfig or any global config.
 #   - Pre-existing regular-file ~/.claude/skills/<name>/SKILL.md (or other .md)
 #     is backed up to <file>.bak.<UTC> only if its content differs from the
@@ -31,6 +39,7 @@ set -euo pipefail
 
 LOCAL_FORKS="${LOCAL_FORKS:-${HOME}/.claude/local-forks}"
 SKILLS_DIR="${HOME}/.claude/skills"
+CODEX_SKILLS_DIR="${CODEX_HOME:-${HOME}/.codex}/skills"
 PLUGINS_CACHE="${HOME}/.claude/plugins/cache"
 INSTALLED_JSON="${HOME}/.claude/plugins/installed_plugins.json"
 TRACKED_DIR="${LOCAL_FORKS}/_tracked"
@@ -43,14 +52,65 @@ declare -a NEEDS_SYNC=()
 declare -a UNKNOWN_PLUGIN=()
 declare -a JSON_ERROR=()
 declare -a BACKED_UP=()
+declare -a SKIPPED=()
+declare -a STALE=()
+declare -a PRUNED=()
+declare -a UNMANAGED=()
+declare -a UNJUDGED=()
+declare -a UNJUDGED_RESOLVE=()
+
+# Set by the machine-layer step below when _meta/machine-id (hand-written and
+# gitignored) actually names an existing profile. A typo there resolves to a
+# non-empty id with no profile: skills still resolve, every machine-scoped one
+# skips, and the sweep must not read that as evidence for deletion.
+MACHINE_PROFILE_OK=0
+
+# --prune: remove skills that this repo installed earlier but no longer targets
+# at this machine/agent. Off by default — bootstrap stays non-destructive.
+PRUNE=0
+for arg in "$@"; do
+  case "${arg}" in
+    --prune) PRUNE=1 ;;
+    *) echo "bootstrap: unknown argument: ${arg}" >&2; exit 2 ;;
+  esac
+done
 
 print_summary() {
   echo
   echo "==> Summary"
-  echo "  System skills linked:      $(ls "${SKILLS_DIR}" 2>/dev/null | wc -l) skill(s)"
+  # Counted from the decision file, not from `ls`: the live directory also holds
+  # skills this repo never installed (plugin- or hand-made), and counting those
+  # would contradict the targeted-install model the next lines report.
+  # Per agent: a row can resolve to codex only, in which case nothing appears
+  # in ~/.claude/skills and a single number would misdescribe the run.
+  echo "  Skills installed from this repo: $(awk -F'\t' '$2=="install" && $3 ~ /claude/' "${TARGETS_FILE:-/dev/null}" 2>/dev/null | wc -l | tr -d ' ') for claude, $(awk -F'\t' '$2=="install" && $3 ~ /codex/' "${TARGETS_FILE:-/dev/null}" 2>/dev/null | wc -l | tr -d ' ') for codex"
   echo "  Forks applied to cache:    ${#APPLIED[@]}"
   if (( ${#APPLIED[@]} > 0 )); then
     for x in "${APPLIED[@]}"; do echo "    - ${x}"; done
+  fi
+  if (( ${#SKIPPED[@]} > 0 )); then
+    echo "  Skills not targeted at this machine/agent: ${#SKIPPED[@]}"
+    for x in "${SKIPPED[@]}"; do echo "    - ${x}"; done
+  fi
+  if (( ${#UNJUDGED_RESOLVE[@]} > 0 )); then
+    echo "  Not installed because the manifest could not be read: ${#UNJUDGED_RESOLVE[@]}"
+    for x in "${UNJUDGED_RESOLVE[@]}"; do echo "    - ${x}"; done
+  fi
+  if (( ${#STALE[@]} > 0 )); then
+    echo "  Installed but no longer targeted (re-run with --prune to remove):"
+    for x in "${STALE[@]}"; do echo "    - ${x}"; done
+  fi
+  if (( ${#UNJUDGED[@]} > 0 )); then
+    echo "  Installed, but the resolver could not judge them (left alone):"
+    for x in "${UNJUDGED[@]}"; do echo "    - ${x}"; done
+  fi
+  if (( ${#UNMANAGED[@]} > 0 )); then
+    echo "  Skill directories with a plain SKILL.md (copy, or someone else's) not targeted here — left untouched:"
+    for x in "${UNMANAGED[@]}"; do echo "    - ${x}"; done
+  fi
+  if (( ${#PRUNED[@]} > 0 )); then
+    echo "  Pruned: ${#PRUNED[@]}"
+    for x in "${PRUNED[@]}"; do echo "    - ${x}"; done
   fi
   if (( ${#BACKED_UP[@]} > 0 )); then
     echo "  Files backed up before overwrite: ${#BACKED_UP[@]}"
@@ -137,9 +197,22 @@ install_skill_symlink() {
 # Prints the machine id, or empty string if undetected. Extend the probe list
 # here when adding a new machine profile under _tracked/machines/<id>/.
 detect_machine() {
-  local idfile="${LOCAL_FORKS}/_meta/machine-id"
+  local idfile="${LOCAL_FORKS}/_meta/machine-id" id=""
   if [[ -f "${idfile}" ]]; then
-    head -n1 "${idfile}" | tr -d '[:space:]'
+    id="$(head -n1 "${idfile}" | tr -d '[:space:]')"
+  fi
+  # An existing but empty file is not an answer: fall through to the symlink,
+  # the way skill-targets.sh does, or the two disagree about this machine.
+  if [[ -n "${id}" ]]; then
+    echo "${id}"
+    return 0
+  fi
+  # Same second source skill-targets.sh uses. Without it the resolver could
+  # answer "home-wsl" from the symlink while this function answered "none", and
+  # a single run would act on two different machines.
+  local cur="${LOCAL_FORKS}/_tracked/machines/current"
+  if [[ -L "${cur}" ]]; then
+    basename "$(readlink "${cur}")"
     return 0
   fi
   # Add marker-file probes for your machines here, e.g.:
@@ -159,31 +232,11 @@ fi
 
 mkdir -p "${SKILLS_DIR}"
 
-echo "==> Installing system skills as symlinks into ${SKILLS_DIR}"
-
-for skill_dir in "${LOCAL_FORKS}/skills"/*/; do
-  skill_name="$(basename "${skill_dir}")"
-
-  # Guard: only dirs with a SKILL.md are skills.
-  src_skill="${skill_dir}SKILL.md"
-  if [[ ! -f "${src_skill}" ]]; then continue; fi
-
-  dst_dir="${SKILLS_DIR}/${skill_name}"
-  mkdir -p "${dst_dir}"
-
-  # Symlink every .md file in the skill directory (SKILL.md, method.md, references).
-  # Single source of truth: edits flow back through the symlink into local-forks
-  # source-of-truth, then through git. Migration from previous copy-based bootstraps
-  # is automatic — see install_skill_symlink() for the backup logic.
-  for src in "${skill_dir}"*.md; do
-    [[ -f "${src}" ]] || continue
-    dst="${dst_dir}/$(basename "${src}")"
-    install_skill_symlink "${src}" "${dst}"
-    echo "  linked: ${skill_name}/$(basename "${src}") → ${src#${HOME}/}"
-  done
-done
-
-# Step 1.5 — point the machine-specific layer at the detected machine.
+# Step 1 — point the machine-specific layer at the detected machine.
+# This runs BEFORE skill install so the id it resolves can be handed to the
+# resolver directly (--machine), keeping one answer for "which machine is this"
+# instead of two implementations that can disagree. The fresh-clone abort itself
+# is fixed by the non-fatal resolver call below, not by this ordering.
 # The thin ~/.claude/CLAUDE.md imports @…/machines/current/CLAUDE.md; `current`
 # is a per-machine symlink (gitignored, see .gitignore) we set here. A relative
 # target keeps it self-contained inside machines/.
@@ -191,6 +244,7 @@ MACHINES_DIR="${TRACKED_DIR}/machines"
 if [[ -d "${MACHINES_DIR}" ]]; then
   MACHINE_ID="$(detect_machine)"
   if [[ -n "${MACHINE_ID}" && -d "${MACHINES_DIR}/${MACHINE_ID}" ]]; then
+    MACHINE_PROFILE_OK=1
     ln -sfn -- "${MACHINE_ID}" "${MACHINES_DIR}/current"
     echo "==> Machine layer: current → machines/${MACHINE_ID}"
   else
@@ -198,6 +252,202 @@ if [[ -d "${MACHINES_DIR}" ]]; then
     echo "    Create _tracked/machines/<id>/ and write the id to _meta/machine-id, then re-run."
   fi
 fi
+
+
+echo "==> Installing system skills as symlinks into ${SKILLS_DIR}"
+
+# Which skills belong on this machine, for which agent, is resolved by
+# skill-targets.sh from skills/<name>/install.json (schema:
+# _system/_shared/install-manifest.md). /pull-forks is told to call the same
+# resolver — prose, so it teaches rather than guarantees; this script is the
+# enforced half. A skill already present in SKILLS_DIR but no
+# longer targeted here is reported, never deleted — removal is --prune, opt-in,
+# because the live directory may hold skills this repo does not own.
+TARGETS_FILE="$(mktemp)"
+trap 'rm -f "${TARGETS_FILE}"' EXIT
+resolver_args=()
+[[ -n "${MACHINE_ID:-}" ]] && resolver_args+=(--machine "${MACHINE_ID}")
+TARGETS_OK=1
+if ! "${LOCAL_FORKS}/_system/scripts/skill-targets.sh" "${resolver_args[@]+"${resolver_args[@]}"}" \
+     > "${TARGETS_FILE}"; then
+  TARGETS_OK=0
+  echo "==> ERROR: skill targeting could not be resolved (message above)." >&2
+  echo "    No skill installed, and the stale sweep is disarmed — with no decision" >&2
+  echo "    file every installed skill would read as 'not targeted' and --prune" >&2
+  echo "    would delete all of them. Everything else below still runs." >&2
+  : > "${TARGETS_FILE}"
+fi
+
+while IFS=$'\t' read -r skill_name decision _agents reason; do
+  [[ -n "${skill_name}" ]] || continue
+  if [[ "${decision}" == "unknown" ]]; then
+    UNJUDGED_RESOLVE+=("${skill_name} (${reason})")
+    continue
+  fi
+  if [[ "${decision}" != "install" ]]; then
+    SKIPPED+=("${skill_name} (${reason})")
+    continue
+  fi
+
+  skill_dir="${LOCAL_FORKS}/skills/${skill_name}/"
+
+  # Belt and braces: the resolver already emits rows only for directories that
+  # have a SKILL.md, so this never fires today — it keeps the loop honest if the
+  # resolver's contract ever loosens.
+  src_skill="${skill_dir}SKILL.md"
+  if [[ ! -f "${src_skill}" ]]; then continue; fi
+
+  # One skill can target both agents; _agents is the resolved intersection of
+  # the manifest and what this machine has. Codex reads CODEX_HOME/skills/<n>/;
+  # both install shapes were exercised against codex-cli 0.154.0 — a symlinked
+  # skill directory and the per-file symlinks this loop writes.
+  for target_agent in ${_agents//,/ }; do
+    case "${target_agent}" in
+      claude) dst_dir="${SKILLS_DIR}/${skill_name}" ;;
+      codex)  dst_dir="${CODEX_SKILLS_DIR}/${skill_name}" ;;
+      *) continue ;;
+    esac
+    mkdir -p "${dst_dir}"
+
+    # Symlink every .md file in the skill directory (SKILL.md, method.md,
+    # references). Single source of truth: edits flow back through the symlink
+    # into local-forks, then through git. Migration from previous copy-based
+    # bootstraps is automatic — see install_skill_symlink() for the backup logic.
+    for src in "${skill_dir}"*.md; do
+      [[ -f "${src}" ]] || continue
+      dst="${dst_dir}/$(basename "${src}")"
+      install_skill_symlink "${src}" "${dst}"
+      echo "  linked[${target_agent}]: ${skill_name}/$(basename "${src}") → ${src#${HOME}/}"
+    done
+  done
+done < "${TARGETS_FILE}"
+
+# Skills installed earlier that this machine no longer targets — in either agent
+# root. Reported by default; removed only under --prune.
+#
+# Three install shapes exist in the wild and all three are recognised, because
+# reporting only one made the README promise false for the other two:
+#   a) directory of per-file symlinks into this repo   (this script)
+#   b) a whole-directory symlink into this repo        (/pull-forks)
+#   c) plain copies from the pre-symlink bootstrap     (legacy)
+# Only (a) and (b) are provably ours, so only those are ever deleted; (c) is
+# reported as unmanaged and left alone.
+#
+# --prune never uses `rm -rf` on a directory wholesale: install_skill_symlink
+# writes <file>.bak.<UTC> beside a file it replaces to preserve manual edits,
+# those backups are gitignored, and a blanket delete would destroy the only copy.
+# Symlinks go, real files stay, and the directory is removed only once empty.
+prune_skill_dir() {
+  local dir="$1" kept=0
+  local entry
+  while IFS= read -r entry; do
+    # Ownership is per file, not per directory: a symlink pointing somewhere
+    # else in the same directory belongs to whoever put it there.
+    if [[ -L "${entry}" ]] && [[ "$(readlink -- "${entry}")" == "${LOCAL_FORKS}/"* ]]; then
+      rm -f -- "${entry}"
+    else
+      kept=$((kept + 1))
+    fi
+  done < <(find "${dir}" -mindepth 1 -maxdepth 1 2>/dev/null)
+  if (( kept == 0 )); then
+    rmdir -- "${dir}" 2>/dev/null || true
+  fi
+  echo "${kept}"
+}
+
+# Both guards are about the same failure: a decision file that does not actually
+# say "these skills do not belong here". An empty one (resolver failed) makes
+# every skill look untargeted; an unresolved machine makes every machine-scoped
+# skill look untargeted. Neither is evidence for deletion.
+SWEEP_OK=1
+if (( ! TARGETS_OK )); then
+  SWEEP_OK=0
+elif [[ ! -s "${TARGETS_FILE}" ]]; then
+  # The resolver can exit 0 with no rows at all — a skills/ directory that is
+  # missing, renamed or empty produces exactly that. Judging by exit code alone
+  # left every installed skill reading as "not targeted", which is the deletion
+  # this guard exists to stop; the file being non-empty is the real condition.
+  SWEEP_OK=0
+  echo "==> Stale sweep skipped: the resolver returned no rows at all."
+  echo "    Check that ${LOCAL_FORKS}/skills exists and holds skill directories."
+elif (( ! MACHINE_PROFILE_OK )); then
+  # Belt to the resolver's braces: with no profile every machine-scoped skill
+  # already comes back as `unknown`, which the sweep refuses to act on. Stopping
+  # the whole sweep as well keeps a run that cannot name its own machine from
+  # deleting anything at all.
+  SWEEP_OK=0
+  echo "==> Stale sweep skipped: machine profile unresolved (id '${MACHINE_ID:-none}')."
+  echo "    Machine-scoped skills cannot be judged; fix _meta/machine-id or add"
+  echo "    _tracked/machines/<id>/ and re-run."
+fi
+if (( PRUNE && ! SWEEP_OK )); then
+  echo "==> --prune REFUSED: nothing here proves a skill does not belong." >&2
+fi
+
+for install_root in "${SKILLS_DIR}" "${CODEX_SKILLS_DIR}"; do
+  (( SWEEP_OK )) || break
+  [[ -d "${install_root}" ]] || continue
+  root_agent="claude"; [[ "${install_root}" == "${CODEX_SKILLS_DIR}" ]] && root_agent="codex"
+  while IFS= read -r live_entry; do
+    live_name="$(basename "${live_entry}")"
+    # A skill deleted from the repo leaves its symlinks dangling; those are ours
+    # to report and prune as well, so absence from skills/ is not a skip — the
+    # symlink-target check below is what proves ownership.
+
+    # Three outcomes, and only one of them licenses deletion:
+    #   install for this agent  → belongs here, leave alone
+    #   unknown                 → the resolver could not judge it; not evidence
+    #   skip / no row           → it belongs elsewhere
+    decision="$(awk -F'\t' -v n="${live_name}" '$1==n { print $2; exit }' "${TARGETS_FILE}")"
+    if [[ "${decision}" == "unknown" ]]; then
+      reason="$(awk -F'\t' -v n="${live_name}" '$1==n { print $4; exit }' "${TARGETS_FILE}")"
+      UNJUDGED+=("${live_name} (${root_agent}) — ${reason}")
+      continue
+    fi
+    if awk -F'\t' -v n="${live_name}" -v a="${root_agent}" \
+         '$1==n && $2=="install" { split($3, xs, ","); for (i in xs) if (xs[i]==a) found=1 }
+          END { exit !found }' "${TARGETS_FILE}"; then
+      continue
+    fi
+
+    if [[ -L "${live_entry}" ]]; then
+      # shape (b): whole-directory symlink
+      case "$(readlink -- "${live_entry}")" in
+        "${LOCAL_FORKS}/"*) ;;
+        *) continue ;;
+      esac
+      if (( PRUNE )); then
+        rm -f -- "${live_entry}"
+        PRUNED+=("${live_name} (${root_agent}, dir symlink)")
+      else
+        STALE+=("${live_name} (${root_agent})")
+      fi
+      continue
+    fi
+
+    live_md="${live_entry}/SKILL.md"
+    if [[ -L "${live_md}" ]]; then
+      # shape (a): per-file symlinks
+      case "$(readlink -- "${live_md}")" in
+        "${LOCAL_FORKS}/"*) ;;
+        *) continue ;;
+      esac
+      if (( PRUNE )); then
+        kept="$(prune_skill_dir "${live_entry}")"
+        if (( kept > 0 )); then
+          PRUNED+=("${live_name} (${root_agent}, ${kept} entr(y|ies) kept — backups or files we do not own)")
+        else
+          PRUNED+=("${live_name} (${root_agent})")
+        fi
+      else
+        STALE+=("${live_name} (${root_agent})")
+      fi
+    elif [[ -f "${live_md}" ]]; then
+      # shape (c): legacy copy — ours by name only, so never deleted
+      UNMANAGED+=("${live_name} (${root_agent}, plain copy — remove by hand if unwanted)")
+    fi
+  done < <(find "${install_root}" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) 2>/dev/null)
+done
 
 # Step 2 — restore tracked top-level files (CLAUDE.md and anything it @-imports)
 # alongside it in ~/.claude/. A file is restored only if the live copy is missing;
@@ -234,6 +484,19 @@ if [[ -f "${TRACKED_DIR}/statusline.sh" ]]; then
   echo "==> Linked statusline.sh → _tracked/statusline.sh"
 fi
 
+# Step 2.4 — project the tracked rule layers into Codex's AGENTS.md. Claude Code
+# gets the layers through @-imports in ~/.claude/CLAUDE.md; Codex has no import
+# mechanism, so the same layers are concatenated into one generated file (see
+# build-agents-md.sh for the measurements behind that). Runs only when a Codex
+# home exists — a machine without Codex gets nothing written.
+CODEX_HOME_DIR="${CODEX_HOME:-${HOME}/.codex}"
+if [[ -d "${CODEX_HOME_DIR}" ]]; then
+  if ! "${LOCAL_FORKS}/_system/scripts/build-agents-md.sh"; then
+    echo "==> NOTE: Codex rule layer NOT installed (see the message above)."
+    echo "    Claude Code is unaffected; fix the cause and re-run bootstrap."
+  fi
+fi
+
 # Step 2.5 — install the repo's deterministic pre-commit gate. Git hooks are not
 # cloneable, so the tracked script is linked into .git/hooks on every bootstrap.
 # See _system/scripts/pre-commit for why this exists (dual-circuit enforcement:
@@ -261,6 +524,36 @@ if [[ -f "${LIVE_CLAUDE_DIR}/settings.json" ]]; then
     echo "==> NOTE: statusLine is not registered in settings.json."
     echo "    Add: statusLine.command = bash ${LIVE_CLAUDE_DIR}/statusline.sh"
   fi
+fi
+
+# Step 2.7 — Codex hook registration is machine-local too (~/.codex/hooks.json),
+# and Codex additionally records a trusted_hash per hook in config.toml: editing
+# a registered hook invalidates that hash until the user re-trusts it. So this is
+# a check-and-report step, exactly like settings.json above — bootstrap never
+# writes hooks.json.
+#
+# The two hook scripts are agent-agnostic by payload: Codex sends `prompt` and
+# `session_id` on UserPromptSubmit and `transcript_path`/`stop_hook_active` on
+# Stop, the same field names Claude Code uses (schemas read out of the codex
+# binary, 0.154.0), and transcript_reader.py absorbs the transcript-format
+# difference.
+CODEX_HOOKS_JSON="${CODEX_HOME:-${HOME}/.codex}/hooks.json"
+if [[ -d "${CODEX_HOME:-${HOME}/.codex}" ]]; then
+  for hook_script in capture-corrections reflect-reminder; do
+    if [[ ! -f "${CODEX_HOOKS_JSON}" ]] || ! grep -q "${hook_script}" "${CODEX_HOOKS_JSON}"; then
+      case "${hook_script}" in
+        capture-corrections) hook_event="UserPromptSubmit" ;;
+        reflect-reminder)    hook_event="Stop" ;;
+      esac
+      echo "==> NOTE: ${hook_script} is not registered in ${CODEX_HOOKS_JSON} (${hook_event})."
+      echo "    hooks.json has its own shape — add an entry under hooks.${hook_event}:"
+      echo "      { \"hooks\": [ { \"type\": \"command\","
+      echo "          \"command\": \"python3 ${LOCAL_FORKS}/_system/scripts/${hook_script}.py\" } ] }"
+      echo "    The file already carries Superset entries — merge, do not replace."
+      echo "    Codex pins a trusted_hash per hook in config.toml; after editing,"
+      echo "    Codex asks to re-trust the hook before it runs again."
+    fi
+  done
 fi
 
 if [[ -f "${INSTALLED_JSON}" ]]; then

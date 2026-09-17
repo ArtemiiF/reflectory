@@ -6,8 +6,14 @@
 # forget it. A git hook fires on every commit regardless of who (or what)
 # composes it. Prose teaches, the hook guarantees (dual-circuit enforcement).
 #
-# Checks: YAML frontmatter validity in every tracked *.md (validate-frontmatter.sh).
-# Blocks the commit (exit 1) only on a confirmed artifact failure.
+# Checks: YAML frontmatter validity in every tracked *.md (validate-frontmatter.sh),
+# the skill install-manifest schema (validate-manifests.sh), and that the
+# transcript translation still yields conversation for both agents
+# (check-transcript-reader.sh) — a format drift there is invisible at runtime.
+# Blocks the commit (exit 1) on a confirmed artifact failure. The transcript
+# check is the one gate whose evidence is ambient (transcripts on the machine,
+# not files in the commit) — see its section at the bottom for what that buys
+# and what it costs.
 #
 # Graceful degradation: if the validator script is missing, warn to stderr and
 # pass — the hook's own breakage must never block work (drift visible, not silent).
@@ -23,16 +29,96 @@ LOCAL_FORKS="$(git rev-parse --show-toplevel 2>/dev/null || echo "${HOME}/.claud
 export LOCAL_FORKS
 VALIDATOR="${LOCAL_FORKS}/_system/scripts/validate-frontmatter.sh"
 
+# Each check degrades on its own. An earlier version exited 0 when a script was
+# missing, which silently disabled every check after it.
 if [[ ! -f "${VALIDATOR}" ]]; then
   echo "pre-commit: validate-frontmatter.sh not found — frontmatter check skipped this commit." >&2
-  exit 0
-fi
-
-if ! bash "${VALIDATOR}"; then
+elif ! bash "${VALIDATOR}"; then
   echo >&2
   echo "pre-commit: frontmatter validation FAILED — commit blocked." >&2
   echo "Fix the file(s) above and retry. Do not bypass with --no-verify." >&2
   exit 1
 fi
+
+MANIFEST_VALIDATOR="${LOCAL_FORKS}/_system/scripts/validate-manifests.sh"
+
+if [[ ! -f "${MANIFEST_VALIDATOR}" ]]; then
+  echo "pre-commit: validate-manifests.sh not found — manifest check skipped this commit." >&2
+  MANIFEST_VALIDATOR=""
+fi
+
+if [[ -n "${MANIFEST_VALIDATOR}" ]] && ! bash "${MANIFEST_VALIDATOR}"; then
+  echo >&2
+  echo "pre-commit: install-manifest validation FAILED — commit blocked." >&2
+  echo "Schema: _system/_shared/install-manifest.md. Do not bypass with --no-verify." >&2
+  exit 1
+fi
+
+READER_CHECK="${LOCAL_FORKS}/_system/scripts/check-transcript-reader.sh"
+
+if [[ ! -f "${READER_CHECK}" ]]; then
+  echo "pre-commit: check-transcript-reader.sh not found — reader check skipped this commit." >&2
+  exit 0
+fi
+
+
+# Transcript-format drift is invisible at runtime: every consumer keeps working
+# and simply sees an empty conversation, which is how the Codex 0.154 shape
+# change went unnoticed until a review caught it.
+#
+# The verdict depends on transcripts lying around this machine, which have
+# nothing to do with the commit, so only the Codex leg blocks: that is the
+# translation this repo owns. A Claude-side zero means the CHECK is wrong (those
+# records pass through untranslated) and is reported, not enforced. Exit 3 means
+# there was nothing big enough to examine.
+READER_LOG="$(mktemp)"
+bash "${READER_CHECK}" >"${READER_LOG}" 2>&1
+reader_rc=$?
+reader_verdict="$(grep -m1 '^VERDICT: ' "${READER_LOG}" | sed 's/^VERDICT: //')"
+
+if (( reader_rc == 3 )); then
+  # Not enough evidence to judge: nothing settled and large enough, or a single
+  # sample that cannot distinguish an interrupted session from a drift. Reported
+  # in full — an earlier version grepped the report text here and swallowed both
+  # the verdict and the reason behind an unrelated "skipped" line.
+  echo "pre-commit: transcript reader could not judge (verdict: ${reader_verdict:-none}):" >&2
+  cat "${READER_LOG}" >&2
+  rm -f "${READER_LOG}"
+  exit 0
+fi
+
+if (( reader_rc != 0 )); then
+  # Key on the machine-readable verdict the check prints, not on the shape of
+  # its report: an earlier version grepped the per-transcript lines and let an
+  # unclassifiable failure (ImportError, bad args) through as a Claude-side
+  # note — the loudest breakage of the very file this gate guards.
+  case "${reader_verdict}" in
+    drift\ claude)
+      # Claude records pass through untranslated, so a zero there points at the
+      # check, not at the translation this repo owns. Reported, not enforced.
+      echo "pre-commit: transcript reader reports a Claude-leg drift (not blocking):" >&2
+      cat "${READER_LOG}" >&2
+      echo "Claude records are not translated, so this points at the check itself." >&2
+      ;;
+    *)
+      echo "pre-commit: transcript reader check FAILED (rc=${reader_rc}, verdict: ${reader_verdict:-none}) — commit blocked." >&2
+      cat "${READER_LOG}" >&2
+      echo "Fix _system/scripts/transcript_reader.py (or the check). Do not bypass with --no-verify." >&2
+      rm -f "${READER_LOG}"
+      exit 1
+      ;;
+  esac
+fi
+
+# rc==0 still carries news worth seeing: an isolated empty transcript is how a
+# real drift looks on its FIRST session, and discarding the log here threw that
+# early signal away at the only place the check actually runs.
+if [[ "${reader_verdict}" == anomaly* ]]; then
+  echo "pre-commit: transcript reader flagged an anomalous transcript (not blocking):" >&2
+  cat "${READER_LOG}" >&2
+  echo "If the next session reports the same, it is a drift, not an accident." >&2
+fi
+
+rm -f "${READER_LOG}"
 
 exit 0

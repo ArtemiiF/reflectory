@@ -30,6 +30,11 @@ import argparse
 import json
 import sys
 
+# Records in Claude shape whichever agent wrote the transcript — a Codex rollout
+# is translated on the way in (see transcript_reader.py for the mapping), so
+# everything below this import is format-blind.
+from transcript_reader import iter_records
+
 # --- key fields we surface from a tool_use input, in priority order ---------
 # (most tools carry exactly one of these as the "what it operates on")
 TOOL_INPUT_KEYS = (
@@ -83,18 +88,6 @@ def classify_user_string(s):
     if stripped.startswith("<system-reminder"):
         return "reminder", ""
     return "", s
-
-
-def iter_records(path):
-    with open(path, "r", errors="replace") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except (ValueError, UnicodeDecodeError):
-                continue
 
 
 def build(path, args):
