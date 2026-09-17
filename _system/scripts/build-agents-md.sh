@@ -153,7 +153,8 @@ expand_layer() {
 render() {
   cat <<HEADER
 <!-- GENERATED FILE — DO NOT EDIT.
-     Produced by local-forks/_system/scripts/build-agents-md.sh from the tracked
+     Produced by reflectory _system/scripts/build-agents-md.sh (path in
+     _meta/machinery-root) from the tracked
      rule layers, with @-imports expanded inline (Codex has no import syntax).
      Edit the sources, then re-run the script; edits made here are overwritten
      without warning.

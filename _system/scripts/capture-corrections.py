@@ -32,9 +32,14 @@
 #   "hooks": {
 #     "UserPromptSubmit": [
 #       { "hooks": [ { "type": "command",
-#           "command": "python3 ~/.claude/local-forks/_system/scripts/capture-corrections.py" } ] }
+#           "command": "python3 /abs/path/to/_system/scripts/capture-corrections.py" } ] }
 #     ]
 #   }
+#
+#   The path must be ABSOLUTE — the hook runner expands neither ~ nor $HOME. Take it
+#   from `_meta/machinery-root` in the data repo, which bootstrap.sh writes. If it
+#   carries a plugin version number, re-run bootstrap.sh after a plugin update:
+#   bootstrap reports a registration whose file has disappeared.
 
 import datetime
 import json
