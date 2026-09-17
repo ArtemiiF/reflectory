@@ -28,7 +28,7 @@ PROJECTS_DIR="${HOME}/.claude/projects"
 top=3
 min_bytes=0
 include_current=0
-declare -a excludes=()
+excludes=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -48,70 +48,73 @@ if [[ ! -d "${PROJECTS_DIR}" ]]; then
   exit 2
 fi
 
-# --- uuids already analysed in a previous /reflect-* run --------------------
-# Parse the `source_sessions:` YAML block list from every session log.
-declare -A studied=()
-if [[ -d "${LOCAL_FORKS}/_sessions" ]]; then
-  while IFS= read -r u; do
-    [[ -n "${u}" ]] && studied["${u}"]=1
-  done < <(
-    awk '
-      /^source_sessions:[[:space:]]*$/ { inblock=1; next }
-      inblock && /^[[:space:]]*-[[:space:]]*/ {
-        line=$0
-        sub(/^[[:space:]]*-[[:space:]]*/, "", line)
-        gsub(/[[:space:]]/, "", line)
-        if (line != "") print line
-        next
-      }
-      inblock { inblock=0 }
-    ' "${LOCAL_FORKS}/_sessions"/*.md 2>/dev/null
-  )
-fi
+# --- selection core -----------------------------------------------------------
+# Implemented in python3 (present on every target machine): bash 3.2 on macOS has no
+# `declare -A` / `mapfile`, and BSD `find` has no `-printf`, so the previous pure-bash
+# core failed on this machine with `declare: -A: invalid option` before printing a row.
+PROJECTS_DIR="${PROJECTS_DIR}" LOCAL_FORKS="${LOCAL_FORKS}" \
+TOP="${top}" MIN_BYTES="${min_bytes}" INCLUDE_CURRENT="${include_current}" \
+EXCLUDES="${excludes[*]:-}" python3 -c '
+# -*- coding: utf-8 -*-
+import io, os, re, sys
 
-# explicit --exclude uuids
-for e in "${excludes[@]:-}"; do
-  [[ -n "${e}" ]] && studied["${e}"]=1
-done
+projects = os.environ["PROJECTS_DIR"]
+forks    = os.environ["LOCAL_FORKS"]
+top      = int(os.environ.get("TOP") or 3)
+min_b    = int(os.environ.get("MIN_BYTES") or 0)
+inc_cur  = os.environ.get("INCLUDE_CURRENT") == "1"
+skip     = set(x for x in (os.environ.get("EXCLUDES") or "").split() if x)
 
-# --- gather top-level session files: projects/<project>/<uuid>.jsonl --------
-# mindepth/maxdepth 2 keeps us at the session level and skips /subagents/.
-# Collect "mtime<TAB>size<TAB>path" so we can both find the newest (current) and sort by size.
-mapfile -t rows < <(
-  find "${PROJECTS_DIR}" -mindepth 2 -maxdepth 2 -type f -name '*.jsonl' \
-       -printf '%T@\t%s\t%p\n' 2>/dev/null
-)
+# uuids recorded in a previous run: the `source_sessions:` YAML block of each session log
+sessions_dir = os.path.join(forks, "_sessions")
+if os.path.isdir(sessions_dir):
+    for name in sorted(os.listdir(sessions_dir)):
+        if not name.endswith(".md"):
+            continue
+        inblock = False
+        for line in io.open(os.path.join(sessions_dir, name), encoding="utf-8", errors="replace"):
+            if re.match(r"^source_sessions:\s*$", line):
+                inblock = True
+                continue
+            if inblock:
+                m = re.match(r"^\s*-\s*(\S+)", line)
+                if m:
+                    skip.add(m.group(1))
+                else:
+                    inblock = False
 
-if [[ ${#rows[@]} -eq 0 ]]; then
-  echo "list-sessions: no session transcripts under ${PROJECTS_DIR}" >&2
-  exit 0
-fi
+# top-level session files only: projects/<project>/<uuid>.jsonl (never /subagents/)
+rows = []
+if not os.path.isdir(projects):
+    sys.stderr.write("list-sessions: no projects dir: %s\n" % projects)
+    sys.exit(2)
+for proj in os.listdir(projects):
+    d = os.path.join(projects, proj)
+    if not os.path.isdir(d):
+        continue
+    for fn in os.listdir(d):
+        if not fn.endswith(".jsonl"):
+            continue
+        path = os.path.join(d, fn)
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        rows.append((st.st_mtime, st.st_size, path, fn[:-6]))
 
-# newest mtime = current/live session (unless caller opts in to include it)
-current_path=""
-if [[ "${include_current}" -eq 0 ]]; then
-  current_path="$(printf '%s\n' "${rows[@]}" | sort -t$'\t' -k1,1 -rn | head -1 | cut -f3)"
-fi
+if not rows:
+    sys.stderr.write("list-sessions: no session transcripts under %s\n" % projects)
+    sys.exit(0)
 
-# --- filter + sort by size desc + take top N --------------------------------
-printf '%s\n' "${rows[@]}" \
-  | sort -t$'\t' -k2,2 -rn \
-  | awk -F'\t' \
-        -v top="${top}" -v minb="${min_bytes}" -v cur="${current_path}" \
-        -v studied_list="$(printf '%s ' "${!studied[@]}")" '
-    BEGIN {
-      n = split(studied_list, a, " ")
-      for (i = 1; i <= n; i++) if (a[i] != "") skip[a[i]] = 1
-    }
-    {
-      size = $2; path = $3
-      if (path == cur) next                 # live session
-      uuid = path
-      sub(/.*\//, "", uuid); sub(/\.jsonl$/, "", uuid)
-      if (uuid in skip) next                 # already studied / explicit exclude
-      if (size + 0 < minb + 0) next          # below floor
-      print size "\t" uuid "\t" path
-      kept++
-      if (top > 0 && kept >= top) exit
-    }
-  '
+current = "" if inc_cur else max(rows)[2]   # newest mtime = live session
+
+kept = 0
+for mtime, size, path, uuid in sorted(rows, key=lambda r: -r[1]):
+    if path == current:      continue
+    if uuid in skip:         continue
+    if size < min_b:         continue
+    sys.stdout.write("%d\t%s\t%s\n" % (size, uuid, path))
+    kept += 1
+    if top > 0 and kept >= top:
+        break
+'
