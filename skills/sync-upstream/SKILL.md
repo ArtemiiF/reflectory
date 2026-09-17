@@ -25,14 +25,28 @@ description: >-
 
 
 
-> **Where the scripts live.** `_system/scripts/…` sits wherever this skill was
-> installed from: inside the plugin when reflectory is installed as one
-> (`${CLAUDE_PLUGIN_ROOT}/_system/scripts/…`), or inside the data repo on a
-> machine bootstrapped from a full clone (`~/.claude/local-forks/_system/scripts/…`).
-> `~/.claude/local-forks` is the DATA path either way — rules, skills, session
-> logs. Resolve a script by trying the plugin root first and the data repo
-> second; do not assume one layout.
-
+> **Where the machinery lives.** `_system/…` and the system skills sit wherever this
+> skill was installed from: inside the plugin when reflectory is installed as one,
+> inside the data repo on a machine bootstrapped from a full clone.
+> `~/.claude/local-forks` is the DATA path either way — rules, personal skills,
+> session logs. Every Bash call that needs the machinery opens with these three
+> lines (the shell resets between calls, so `${R}` never survives to the next one;
+> when you need the root for a **file read** instead, make one such call that just
+> echoes it):
+>
+> ```bash
+> R="${CLAUDE_PLUGIN_ROOT:-$(head -1 "${LOCAL_FORKS:-$HOME/.claude/local-forks}"/_meta/machinery-root 2>/dev/null)}"
+> [ -d "${R}/_system/scripts" ] || R="<the directory you read this SKILL.md from>/../.."
+> [ -d "${R}/_system/scripts" ] || { echo "reflectory machinery not found — run bootstrap.sh" >&2; exit 1; }
+> ```
+>
+> `_meta/machinery-root` is written by `bootstrap.sh` into the data repo it was
+> pointed at (`${LOCAL_FORKS}`, default `~/.claude/local-forks`) — that process is
+> the one that knows where it ran from. Before the first bootstrap on a machine the
+> pointer does not exist yet, which is what the second line is for: this file lives
+> at `<root>/skills/<name>/SKILL.md`, so the directory you opened it from, two
+> levels up, IS the root. `CLAUDE_PLUGIN_ROOT` is empty in a skill's own shell and
+> only helps inside plugin hooks.
 
 Walk over every forked plugin artefact recorded in `~/.claude/local-forks/<plugin>/<kind>/<name>/`, detect whether the plugin's installed version on disk now differs from the baseline recorded in `<plugin>/_meta.json`, and — for each artefact that drifted — semantically re-apply our intent log on top of the new upstream content. Apply only what the user approves. Push to GitHub.
 
@@ -45,7 +59,7 @@ The system is described in `README.md` (overview, layout, fork lifecycle) and `m
 
 ## Preconditions
 
-- `~/.claude/local-forks/` exists, is a git repo, has an `origin` remote that responds (see `~/.claude/local-forks/_system/_shared/init-remote.md`).
+- `~/.claude/local-forks/` exists, is a git repo, has an `origin` remote that responds (see `${R}/_system/_shared/init-remote.md`).
 - At least one forked artefact exists (otherwise this skill has nothing to do).
 - `gh` CLI is authenticated.
 
@@ -55,7 +69,7 @@ Steps run strictly in order. A step that fails twice → stop, surface state to 
 
 ### Step 0. Pre-flight
 
-Run `~/.claude/local-forks/_system/_shared/init-remote.md`. Proceed only on state `READY`.
+Run `${R}/_system/_shared/init-remote.md`. Proceed only on state `READY`.
 
 ### Step 1. Pull remote first
 
@@ -122,7 +136,7 @@ If the work list is empty: report «all forks up to date», exit.
 
 If `upstream.new.md` is missing (artefact removed in the new upstream), drop into the special row in § Failure handling instead of running the method.
 
-**Step 4b — Open and read `method.md`** (located at `~/.claude/local-forks/skills/sync-upstream/method.md`) and execute its seven phases per fork:
+**Step 4b — Open and read `method.md`** (located at `${R}/skills/sync-upstream/method.md`, beside this SKILL.md) and execute its seven phases per fork:
 
 1. **Parse intent log** — extract Why / Where / Effect / Re-apply rule from each `## Improvement #N`; mark malformed entries.
 2. **Classify** each Improvement as `subsumed` / `active` / `conflict`, with a quoted upstream span as evidence for the first two.
@@ -162,18 +176,18 @@ Before composing the commit:
 
 1. Regenerate the fork index so `INDEX.md` reflects the new baseline versions and intent counts:
    ```
-   bash ~/.claude/local-forks/_system/scripts/build-index.sh
+   bash ${R}/_system/scripts/build-index.sh
    ```
 
 2. Validate frontmatter in every `*.md` we may have touched:
    ```
-   bash ~/.claude/local-forks/_system/scripts/validate-frontmatter.sh
+   bash ${R}/_system/scripts/validate-frontmatter.sh
    ```
    Exits non-zero on any malformed YAML frontmatter. If it fails, do NOT commit — fix the offending file first and re-run.
 
 3. Bump the push timestamp so it ships in the same commit (no amend, no force-push):
    ```
-   bash ~/.claude/local-forks/_system/scripts/update-last-push.sh
+   bash ${R}/_system/scripts/update-last-push.sh
    ```
    Writes the current UTC into `_meta/remote.json:last_push_ok_at`. Stage `_meta/remote.json` along with the other approved changes — one commit per pipeline.
 

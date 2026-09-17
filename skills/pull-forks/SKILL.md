@@ -17,14 +17,28 @@ description: >-
 
 # /pull-forks
 
-> **Where the scripts live.** `_system/scripts/…` sits wherever this skill was
-> installed from: inside the plugin when reflectory is installed as one
-> (`${CLAUDE_PLUGIN_ROOT}/_system/scripts/…`), or inside the data repo on a
-> machine bootstrapped from a full clone (`~/.claude/local-forks/_system/scripts/…`).
-> `~/.claude/local-forks` is the DATA path either way — rules, skills, session
-> logs. Resolve a script by trying the plugin root first and the data repo
-> second; do not assume one layout.
-
+> **Where the machinery lives.** `_system/…` and the system skills sit wherever this
+> skill was installed from: inside the plugin when reflectory is installed as one,
+> inside the data repo on a machine bootstrapped from a full clone.
+> `~/.claude/local-forks` is the DATA path either way — rules, personal skills,
+> session logs. Every Bash call that needs the machinery opens with these three
+> lines (the shell resets between calls, so `${R}` never survives to the next one;
+> when you need the root for a **file read** instead, make one such call that just
+> echoes it):
+>
+> ```bash
+> R="${CLAUDE_PLUGIN_ROOT:-$(head -1 "${LOCAL_FORKS:-$HOME/.claude/local-forks}"/_meta/machinery-root 2>/dev/null)}"
+> [ -d "${R}/_system/scripts" ] || R="<the directory you read this SKILL.md from>/../.."
+> [ -d "${R}/_system/scripts" ] || { echo "reflectory machinery not found — run bootstrap.sh" >&2; exit 1; }
+> ```
+>
+> `_meta/machinery-root` is written by `bootstrap.sh` into the data repo it was
+> pointed at (`${LOCAL_FORKS}`, default `~/.claude/local-forks`) — that process is
+> the one that knows where it ran from. Before the first bootstrap on a machine the
+> pointer does not exist yet, which is what the second line is for: this file lives
+> at `<root>/skills/<name>/SKILL.md`, so the directory you opened it from, two
+> levels up, IS the root. `CLAUDE_PLUGIN_ROOT` is empty in a skill's own shell and
+> only helps inside plugin hooks.
 
 Fast-forward `~/.claude/local-forks` from its `origin`, classify what the pull
 brought in, and — with per-item approval — install the pieces that need machine-local
@@ -44,7 +58,7 @@ identically whatever the user called their data repo.
 ## Preconditions
 
 - `~/.claude/local-forks/` exists, is a git repo, `origin` responds
-  (see `~/.claude/local-forks/_system/_shared/init-remote.md` — same pre-flight
+  (see `${R}/_system/_shared/init-remote.md` — same pre-flight
   as the other reflectory skills).
 
 ## Algorithm
@@ -54,7 +68,7 @@ not retry a third time.
 
 ### Step 0. Pre-flight
 
-Run `~/.claude/local-forks/_system/_shared/init-remote.md`. Proceed only on `READY`.
+Run `${R}/_system/_shared/init-remote.md`. Proceed only on `READY`.
 
 ### Step 1. Pull
 
@@ -112,7 +126,7 @@ axes decide it: machine and agent, declared per skill in `skills/<name>/install.
 skill and `bootstrap.sh`, so the two installers cannot drift:
 
 ```
-~/.claude/local-forks/_system/scripts/skill-targets.sh
+${R}/_system/scripts/skill-targets.sh
 ```
 
 Output is one TSV line per skill: `<name>  install|skip  <agents>  <reason>`.
@@ -168,8 +182,8 @@ no `@`-import: text reaches the model only if it sits in `AGENTS.md` itself, so
 the tracked layers are concatenated into one generated file.
 
 ```
-~/.claude/local-forks/_system/scripts/build-agents-md.sh --check   # stale?
-~/.claude/local-forks/_system/scripts/build-agents-md.sh           # re-project
+${R}/_system/scripts/build-agents-md.sh --check   # stale?
+${R}/_system/scripts/build-agents-md.sh           # re-project
 ```
 
 `--check` compares the sha256 of the current layers against the one stamped in

@@ -17,14 +17,28 @@ argument-hint: "[--top N] [--min-bytes BYTES] [paths...]"
 
 # /reflect-archive
 
-> **Where the scripts live.** `_system/scripts/…` sits wherever this skill was
-> installed from: inside the plugin when reflectory is installed as one
-> (`${CLAUDE_PLUGIN_ROOT}/_system/scripts/…`), or inside the data repo on a
-> machine bootstrapped from a full clone (`~/.claude/local-forks/_system/scripts/…`).
-> `~/.claude/local-forks` is the DATA path either way — rules, skills, session
-> logs. Resolve a script by trying the plugin root first and the data repo
-> second; do not assume one layout.
-
+> **Where the machinery lives.** `_system/…` and the system skills sit wherever this
+> skill was installed from: inside the plugin when reflectory is installed as one,
+> inside the data repo on a machine bootstrapped from a full clone.
+> `~/.claude/local-forks` is the DATA path either way — rules, personal skills,
+> session logs. Every Bash call that needs the machinery opens with these three
+> lines (the shell resets between calls, so `${R}` never survives to the next one;
+> when you need the root for a **file read** instead, make one such call that just
+> echoes it):
+>
+> ```bash
+> R="${CLAUDE_PLUGIN_ROOT:-$(head -1 "${LOCAL_FORKS:-$HOME/.claude/local-forks}"/_meta/machinery-root 2>/dev/null)}"
+> [ -d "${R}/_system/scripts" ] || R="<the directory you read this SKILL.md from>/../.."
+> [ -d "${R}/_system/scripts" ] || { echo "reflectory machinery not found — run bootstrap.sh" >&2; exit 1; }
+> ```
+>
+> `_meta/machinery-root` is written by `bootstrap.sh` into the data repo it was
+> pointed at (`${LOCAL_FORKS}`, default `~/.claude/local-forks`) — that process is
+> the one that knows where it ran from. Before the first bootstrap on a machine the
+> pointer does not exist yet, which is what the second line is for: this file lives
+> at `<root>/skills/<name>/SKILL.md`, so the directory you opened it from, two
+> levels up, IS the root. `CLAUDE_PLUGIN_ROOT` is empty in a skill's own shell and
+> only helps inside plugin hooks.
 
 Walk back through the largest past sessions (or explicit ones), reflect on each in its own
 sub-agent, put every proposed change through a critic that re-reads the **raw** transcript, then
@@ -58,14 +72,14 @@ are tens of MB to ~1 MB; all reading happens inside sub-agents.
 
 ### Step 0. Pre-flight
 
-Execute `~/.claude/local-forks/_system/_shared/init-remote.md`. Proceed only after `READY`.
+Execute `${R}/_system/_shared/init-remote.md`. Proceed only after `READY`.
 
 ### Step 1. Select sessions (method Phase S)
 
 Run the selector:
 
 ```
-bash ~/.claude/local-forks/_system/scripts/list-sessions.sh [--top N] [--min-bytes B] [--exclude UUID]...
+bash ${R}/_system/scripts/list-sessions.sh [--top N] [--min-bytes B] [--exclude UUID]...
                                                             [--agent claude|codex|all]
 ```
 
@@ -90,8 +104,12 @@ mechanism). An agent with no delegation runs the sessions one after another inli
 discipline below is why delegation is preferred, not a hard requirement. Each reflector's
 prompt instructs it to:
 
-1. Run `python3 ~/.claude/local-forks/_system/scripts/session-digest.py <raw-path> --out <scratch>/<uuid>.digest.txt`.
-2. Read the digest (chunked if large) and execute `~/.claude/local-forks/skills/reflect-session/method.md`
+Resolve `${R}` once in your own shell before composing the prompts, and write the
+**resolved absolute paths** into each prompt — a sub-agent has not read this file and
+would receive a literal `${R}` as an empty string.
+
+1. Run `python3 <machinery-root>/_system/scripts/session-digest.py <raw-path> --out <scratch>/<uuid>.digest.txt`.
+2. Read the digest (chunked if large) and execute `<machinery-root>/skills/reflect-session/method.md`
    **Phases 0–5** against it.
 3. Return findings in the structured contract from `method.md` Phase R (`evidence` with `[E…]`
    pointer, `cluster`, `category` + scope/class, `draft`, `self_test`). Propose only — apply
