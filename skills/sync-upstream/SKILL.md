@@ -15,6 +15,16 @@ description: >-
 
 # /sync-upstream
 
+> **Scope: forked artefacts, not the machinery.** This skill re-applies YOUR forks of
+> plugin artefacts — `skills/`, `agents/`, `commands/`, a plugin's own `CLAUDE.md` — on
+> top of a new upstream version. It does not move `_system/` scripts anywhere: the
+> machinery ships with the plugin and arrives with a plugin update
+> (`claude plugin update <name>`), while the data repo keeps rules, skills and session
+> logs. A machine bootstrapped from a full clone carries its own copy of `_system/`;
+> there, a plugin update does not touch it, and re-cloning is the way to move it.
+
+
+
 > **Where the scripts live.** `_system/scripts/…` sits wherever this skill was
 > installed from: inside the plugin when reflectory is installed as one
 > (`${CLAUDE_PLUGIN_ROOT}/_system/scripts/…`), or inside the data repo on a

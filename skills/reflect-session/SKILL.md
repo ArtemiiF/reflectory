@@ -1,7 +1,7 @@
 ---
 name: reflect-session
 description: >-
-  Analyse the current Claude Code conversation and propose improvements to the user's
+  Analyse the current agent session — Claude Code or Codex — and propose improvements to the user's
   Claude configuration: edits to CLAUDE.md, forks of plugin skills/agents/commands,
   or brand-new local skills. Every change requires per-item user approval. All
   long-lived knowledge is stored in `.md` files — auto-memory is not used.
@@ -26,14 +26,14 @@ argument-hint: "[optional: path to a past .jsonl session file]"
 > second; do not assume one layout.
 
 
-Walk back through the conversation that just happened, find concrete points where the user's Claude Code setup could be improved, propose changes, and apply only what the user explicitly approves. Persist every approved change in `~/.claude/local-forks/` (git-tracked, pushed to GitHub) and — for plugin artefacts — also rewrite the corresponding file inside the plugin cache.
+Walk back through the conversation that just happened, find concrete points where the user's agent setup could be improved, propose changes, and apply only what the user explicitly approves. The rule layers and skills are shared between Claude Code and Codex, so a finding harvested in one agent usually applies to both — say which agent it came from when it does not. Persist every approved change in `~/.claude/local-forks/` (git-tracked, pushed to GitHub) and — for plugin artefacts — also rewrite the corresponding file inside the plugin cache.
 
 The system is described in `README.md` (overview, layout, fork lifecycle) and `method.md` (analytical scaffolding for Step 2).
 
 ## Inputs
 
 - The current conversation context (transcript Claude already has in scope).
-- Optional argument: an absolute path to a past `~/.claude/projects/.../<uuid>.jsonl` file when the user wants to reflect on an earlier session instead of the current one.
+- Optional argument: an absolute path to a past transcript when the user wants to reflect on an earlier session instead of the current one — `~/.claude/projects/.../<uuid>.jsonl` for Claude Code, `~/.codex/sessions/<Y>/<M>/<D>/rollout-*.jsonl` for Codex. `_system/scripts/list-sessions.sh --agent all` lists both; `session-digest.py` reads either.
 
 ## Preconditions
 
@@ -78,7 +78,7 @@ A clean session legitimately produces zero findings. Inventing improvements to j
 |---|---|---|
 | A. Config rule | A rule, preference, correction, or routing change that should apply across sessions. First split by **scope** (method.md Phase 3): **общее (G)** → `~/.claude/local-forks/_tracked/general-rules.md` (portable, `@import`-ed); **личное** → the layer file Phase 3 routes to: `_tracked/shared.md` (K1 / portable K0) or `_tracked/machines/current/` (machine-bound K0 / K2); **project** → `<workspace>/.claude/CLAUDE.md` (stays in the workspace repo). The live `~/.claude/CLAUDE.md` is a thin root of `@import`s — rules do not land there directly. |
 | B. Fork of a plugin artefact | A behavioural change to a specific plugin skill / agent / command. | New or updated entry under `~/.claude/local-forks/<plugin>/...`, plus edit-in-place in `~/.claude/plugins/cache/.../<version>/`. |
-| C. New local skill | A stable, reusable pattern that does not exist as a skill yet. | New `~/.claude/local-forks/skills/<name>/SKILL.md` (source of truth) and a symlink `~/.claude/skills/<name>/SKILL.md` → that file (so Claude Code finds it at the live path). Cross-machine portability follows from the symlink layout: `bootstrap.sh` re-creates the symlink on every fresh machine. |
+| C. New local skill | A stable, reusable pattern that does not exist as a skill yet. | New `~/.claude/local-forks/skills/<name>/SKILL.md` (source of truth) plus `install.json` beside it declaring `machines` and `agents` (schema: `_system/_shared/install-manifest.md`). Do NOT hand-link it into an agent root — `bootstrap.sh` resolves the manifest and writes the shape each agent actually reads (per-file symlinks for Claude Code, a directory symlink for Codex), on this machine and on every fresh one. |
 
 A finding that does not cleanly fit any category goes to a fourth bucket — `Discard` — and is dropped with a one-line reason logged in the session report.
 
@@ -231,7 +231,7 @@ If push fails — single retry, then surface error and stop. Local changes stay;
 Tell the user:
 
 - Summary of what was applied vs skipped vs discarded.
-- **If any B finding was applied:** «Run `/reload-plugins` to make the plugin-cache edits visible to the current Claude Code process.»
+- **If any B finding was applied, in Claude Code:** «Run `/reload-plugins` to make the plugin-cache edits visible to the current process.» In Codex there is no such command — say that the edit lands for the next session.
 - **If only A or C findings were applied:** «Changes take effect in this session immediately.»
 
 ## Anti-patterns
@@ -239,7 +239,7 @@ Tell the user:
 - **No batch approval.** Each finding is approved on its own.
 - **No silent edits.** Every applied change is reported in Step 7.
 - **No reformatting outside the proposed diff.** Do not «while we're here» any other lines.
-- **No writes to auto-memory** (`~/.claude/projects/.../memory/`). All long-lived knowledge lives in `.md` files.
+- **No writes to auto-memory** (`~/.claude/projects/.../memory/` in Claude Code, the memory store in Codex). All long-lived knowledge lives in `.md` files, which both agents read.
 - **No fork of an artefact that does not exist.** If the user proposes editing a plugin skill that is not installed, surface the contradiction and stop.
 - **No new local skill that duplicates an existing plugin skill.** If the proposed pattern matches an installed skill's description, propose a B-category fork of that skill instead.
 

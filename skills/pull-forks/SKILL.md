@@ -87,7 +87,8 @@ git -C ~/.claude/local-forks diff --name-status ORIG_HEAD..HEAD
 | `_tracked/hooks/*` | hook script | Step 5 — hook wiring |
 | `skills/<name>/SKILL.md`, `*.md` | skill | Step 4 — skill install |
 | `skills/<name>/install.json` | skill targeting manifest | Step 4 — re-resolve; may add or drop a skill on this machine |
-| `_system/**`, `_sessions/**`, `_meta/**`, `INDEX.md` | plumbing / reports | none |
+| `_system/**` | machinery — only present in a full-clone layout | none: under a plugin install the scripts arrive with `claude plugin update`, not through this repo |
+| `_sessions/**`, `_meta/**`, `INDEX.md` | reports / metadata | none |
 
 Empty install list → report «pulled N commits, nothing needs machine-local wiring», exit.
 

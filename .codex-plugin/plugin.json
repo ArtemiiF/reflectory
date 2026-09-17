@@ -1,0 +1,36 @@
+{
+  "name": "reflectory",
+  "version": "0.4.0",
+  "description": "Turn the friction in your sessions into rules that persist. Works with Codex and Claude Code, sharing one rule layer and one personal git repo.",
+  "author": {
+    "name": "Artemii Filanovskii",
+    "url": "https://github.com/ArtemiiF"
+  },
+  "homepage": "https://github.com/ArtemiiF/reflectory",
+  "repository": "https://github.com/ArtemiiF/reflectory",
+  "license": "MIT",
+  "keywords": [
+    "reflection",
+    "rules",
+    "self-improvement",
+    "config",
+    "git"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Reflectory",
+    "shortDescription": "Harvest rules from your own sessions",
+    "longDescription": "At the end of a session, reflectory walks back through the conversation, finds the places where you had to correct the agent, and proposes concrete changes to your rules and skills. You approve each one; approved changes land in a private git repo you own, so they survive machine changes and reach both Codex and Claude Code.",
+    "developerName": "Artemii Filanovskii",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Отрефлексируй сессию",
+      "Разбери мои прошлые большие сессии",
+      "Сожми накопленные правила"
+    ]
+  }
+}

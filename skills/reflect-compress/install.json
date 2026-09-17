@@ -1,4 +1,4 @@
 {
   "machines": ["all"],
-  "agents": ["claude"]
+  "agents": ["claude", "codex"]
 }

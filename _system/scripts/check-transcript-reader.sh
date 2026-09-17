@@ -55,15 +55,25 @@ per_agent = int(os.environ["PER_AGENT"])
 min_records = int(os.environ["MIN_RECORDS"])
 
 
-def record_count(path):
-    """Raw JSON lines. Deliberately not "conversational turns": a transcript
-    whose translation drifted has zero turns by definition, so judging size by
-    anything the translator produces would filter out exactly the evidence."""
+def has_enough_records(path, need):
+    """Raw JSON lines, counted only until `need` is reached.
+
+    Deliberately not "conversational turns": a transcript whose translation
+    drifted has zero turns by definition, so judging size by anything the
+    translator produces would filter out exactly the evidence. And deliberately
+    early-exit: this runs from pre-commit, and counting every line of every
+    transcript in both roots — one of them 409MB here — took minutes per commit.
+    """
+    n = 0
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
-            return sum(1 for _ in fh)
+            for _ in fh:
+                n += 1
+                if n >= need:
+                    return True
     except OSError:
-        return 0
+        pass
+    return False
 
 sources = {
     "codex": os.path.join(os.environ["CODEX_SESSIONS"], "*", "*", "*", "rollout-*.jsonl"),
@@ -83,22 +93,36 @@ for agent, pattern in sources.items():
     # Codex writes the whole system prompt into the first record, so a probe
     # with one exchange is already ~52KB (measured 2026-09-16: probes 15-27
     # records at 52-332KB, real sessions 75-1204 records). Record count does.
-    paths = [p for p in glob.glob(pattern) if record_count(p) >= min_records]
-    if not paths:
-        print("  %-6s no transcript with >=%d records — skipped" % (agent, min_records))
+    #
+    # Newest first, and the record check runs lazily as the list is walked, so a
+    # machine with hundreds of transcripts still only opens the handful that end
+    # up examined.
+    candidates = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+    if not candidates:
+        print("  %-6s no transcript at all — skipped" % agent)
         continue
-    paths.sort(key=os.path.getmtime, reverse=True)
     # A transcript written in the last few minutes is probably still being
     # appended to: mid-run it legitimately has no assistant message yet, and
     # judging it would fail over state that has nothing to do with the commit.
     # Dropping by RANK instead would have skipped the first transcript written
     # after a format drift — exactly the one that shows it.
     now = time.time()
-    fresh = [p for p in paths if now - os.path.getmtime(p) < LIVE_WINDOW_S]
-    paths = [p for p in paths if p not in fresh]
+    fresh = [p for p in candidates if now - os.path.getmtime(p) < LIVE_WINDOW_S]
+    settled = [p for p in candidates if p not in fresh]
     if fresh:
         print("  %-6s %d transcript(s) too fresh to judge (still open) — skipped" % (agent, len(fresh)))
-    for path in paths[:per_agent]:
+
+    paths = []
+    for p in settled:
+        if len(paths) >= per_agent:
+            break
+        if has_enough_records(p, min_records):
+            paths.append(p)
+    if not paths:
+        print("  %-6s no settled transcript with >=%d records — skipped" % (agent, min_records))
+        continue
+
+    for path in paths:
         users = assts = tools = 0
         for rec in iter_records(path):
             msg = rec.get("message") or {}
