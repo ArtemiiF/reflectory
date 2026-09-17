@@ -57,13 +57,20 @@ Run the selector:
 
 ```
 bash ~/.claude/local-forks/_system/scripts/list-sessions.sh [--top N] [--min-bytes B] [--exclude UUID]...
+                                                            [--agent claude|codex|all]
 ```
 
-It returns `bytes<TAB>uuid<TAB>path`, largest first, with `/subagents/`, the live session, and
-already-studied sessions (from prior `source_sessions:`) already removed. If the user gave
-explicit paths, skip the selector and use those.
+It returns `bytes<TAB>uuid<TAB>path<TAB>agent`, largest first, with `/subagents/`, the live session of
+each agent, and already-studied sessions (from prior `source_sessions:`) already removed. If the
+user gave explicit paths, skip the selector and use those.
 
-Present the chosen list (size + uuid) via `AskUserQuestion` and confirm before spawning anything
+Sessions come from both agents by default — Claude Code transcripts and Codex rollouts. The
+formats differ; `session-digest.py` absorbs that, so a reflector sub-agent reads the same digest
+shape either way. Two things to carry through: name the agent in the report (a finding from a
+Codex session may not apply to Claude Code, and the reverse), and expect `thinking` and
+`tool_result_err` to read 0 on a Codex session — Codex rollouts carry neither.
+
+Present the chosen list (size + uuid + agent) via `AskUserQuestion` and confirm before spawning anything
 — batch reflection costs real tokens, and the user may want a different N or specific sessions.
 
 ### Step 2. Reflect per session (method Phase R)

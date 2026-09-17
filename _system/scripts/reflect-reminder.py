@@ -29,6 +29,7 @@ import os
 import sys
 
 from friction_markers import MARKERS
+from transcript_reader import iter_records
 
 THRESHOLD = 3
 METRICS = os.path.expanduser("~/.claude/local-forks/_sessions/friction-metrics.tsv")
@@ -69,33 +70,30 @@ def main() -> int:
     hits = 0
     user_msgs = 0
     try:
-        with open(transcript, encoding="utf-8") as fh:
-            for line in fh:
-                try:
-                    rec = json.loads(line)
-                except Exception:
-                    continue
-                if rec.get("type") != "user" or rec.get("isSidechain"):
-                    continue
-                msg = rec.get("message") or {}
-                content = msg.get("content")
-                if isinstance(content, list):
-                    text = " ".join(
-                        c.get("text", "") for c in content if isinstance(c, dict)
-                    )
-                elif isinstance(content, str):
-                    text = content
-                else:
-                    continue
-                # tool_result-bearing user records are harness echoes, not the user
-                if "tool_use_id" in text or "tool_result" in str(
-                    [c.get("type") for c in content if isinstance(c, dict)]
-                    if isinstance(content, list) else ""
-                ):
-                    continue
-                user_msgs += 1
-                if MARKERS.search(text):
-                    hits += 1
+        # Records arrive in Claude shape from either agent — a Codex rollout is
+        # translated by transcript_reader, so the counting below is unchanged.
+        for rec in iter_records(transcript):
+            if rec.get("type") != "user" or rec.get("isSidechain"):
+                continue
+            msg = rec.get("message") or {}
+            content = msg.get("content")
+            if isinstance(content, list):
+                text = " ".join(
+                    c.get("text", "") for c in content if isinstance(c, dict)
+                )
+            elif isinstance(content, str):
+                text = content
+            else:
+                continue
+            # tool_result-bearing user records are harness echoes, not the user
+            if "tool_use_id" in text or "tool_result" in str(
+                [c.get("type") for c in content if isinstance(c, dict)]
+                if isinstance(content, list) else ""
+            ):
+                continue
+            user_msgs += 1
+            if MARKERS.search(text):
+                hits += 1
     except Exception:
         return 0
 

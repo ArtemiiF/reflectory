@@ -24,7 +24,11 @@ The reflection itself is **not** re-invented here. The per-session reflector exe
 
 Selection is delegated to `_system/scripts/list-sessions.sh` (deterministic). It returns
 top-level session files largest-first, having already dropped `/subagents/` transcripts, the
-live session, and any session whose uuid is recorded in a previous run's `source_sessions:`.
+live session of each agent, and any session whose uuid is recorded in a previous run's
+`source_sessions:`. Rows carry the agent in a fourth column: Claude Code transcripts and Codex
+rollouts are both in scope by default (`--agent claude|codex|all` narrows it), and a finding
+harvested from one agent does not automatically apply to the other — say which agent it came
+from when the finding is agent-specific.
 
 - **Default:** top 3 by size. Size is the proxy for signal density — a long session has more
   user turns, more routing, more friction than a short one. It is a proxy, not truth; the user
