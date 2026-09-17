@@ -345,6 +345,31 @@ while IFS=$'\t' read -r skill_name decision _agents reason; do
           install_skill_symlink "${src}" "${dst}"
           echo "  linked[claude]: ${skill_name}/$(basename "${src}") → ${src#${HOME}/}"
         done
+        # A skill may carry its own directories (references/, evals/). Linking
+        # only top-level .md left a SKILL.md whose "see references/x.md" pointed
+        # at nothing — on this machine the directory was there by hand, so the
+        # gap showed up only on the next machine. One link per directory, not a
+        # copy: the data repo stays the single source.
+        for src in "${skill_dir}"*/; do
+          [[ -d "${src}" ]] || continue
+          sub="$(basename "${src}")"
+          dst="${dst_dir}/${sub}"
+          if [[ -L "${dst}" && "$(readlink "${dst}")" == "${src%/}" ]]; then
+            echo "  linked[claude]: ${skill_name}/${sub}/ → ${src#${HOME}/} (already)"
+            continue
+          fi
+          # A real directory here is someone's manual copy: move it aside rather
+          # than delete, the same contract the .md path keeps via its backups.
+          if [[ -d "${dst}" && ! -L "${dst}" ]]; then
+            bak="${dst}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+            mv "${dst}" "${bak}"
+            BACKED_UP+=("${bak#${HOME}/}")
+          else
+            rm -f "${dst}"
+          fi
+          ln -sfn "${src%/}" "${dst}"
+          echo "  linked[claude]: ${skill_name}/${sub}/ → ${src#${HOME}/} (directory)"
+        done
         ;;
       codex)
         mkdir -p "${CODEX_SKILLS_DIR}"
