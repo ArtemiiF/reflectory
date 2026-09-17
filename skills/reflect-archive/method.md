@@ -15,14 +15,14 @@ differs on two axes:
    method warns about — inventing improvements to justify the run — amplified by batch volume.
 
 The reflection itself is **not** re-invented here. The per-session reflector executes
-`reflect-session/method.md` Phases 0–5 verbatim. This file adds only what is new: **selection**,
+`<machinery-root>/skills/reflect-session/method.md` Phases 0–5 verbatim. This file adds only what is new: **selection**,
 **the critic rubric**, and **revision / consolidation**.
 
 ---
 
 ## Phase S — Select sessions
 
-Selection is delegated to `_system/scripts/list-sessions.sh` (deterministic). It returns
+Selection is delegated to `<machinery-root>/_system/scripts/list-sessions.sh` (deterministic). It returns
 top-level session files largest-first, having already dropped `/subagents/` transcripts, the
 live session of each agent, and any session whose uuid is recorded in a previous run's
 `source_sessions:`. Rows carry the agent in a fourth column: Claude Code transcripts and Codex
@@ -51,7 +51,7 @@ For each selected session, one sub-agent:
 
 1. Runs `session-digest.py <path> --out <digest-path>` (deterministic projection; also the
    human-readable **dump** of what was analysed).
-2. Reads the digest (in chunks if large) and executes `reflect-session/method.md` **Phases 0–5**
+2. Reads the digest (in chunks if large) and executes `<machinery-root>/skills/reflect-session/method.md` **Phases 0–5**
    against it.
 3. Returns findings in the structured contract below. It does **not** apply anything, does not
    write to the repo, does not commit — it only proposes.
@@ -134,7 +134,7 @@ per-finding approval / apply / commit machinery of `/reflect-session`).
 ## What this method is NOT
 
 - **Not a re-implementation of the reflection method.** Phases 0–5 live in
-  `reflect-session/method.md` and are executed there. If the base method changes, this skill
+  `<machinery-root>/skills/reflect-session/method.md` and are executed there. If the base method changes, this skill
   inherits it for free.
 - **Not a way to skip approval.** The critic narrows the set; it never approves. Every survivor
   is still an independent user approval (no batch approval, no silent apply).

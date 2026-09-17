@@ -10,7 +10,8 @@ Every applied A-finding grows the always-on global CLAUDE.md; a rule whose trigg
 
 1. Read the dormancy aggregate — the single source of truth for the decay counter:
    ```
-   python3 ~/.claude/local-forks/_system/scripts/rule-stats.py --dormancy
+   R="${CLAUDE_PLUGIN_ROOT:-$(head -1 "${LOCAL_FORKS:-$HOME/.claude/local-forks}"/_meta/machinery-root 2>/dev/null)}"
+   python3 "${R}"/_system/scripts/rule-stats.py --dormancy
    ```
    It emits one `key<TAB>N<TAB>label` line per audited rule, sorted by N desc. **N is computed from the full history** (length of the trailing run of `dormant` marks for that rule's stable id / normalised label), NOT carried forward from the previous log. A single missing `## Decay check` section therefore no longer resets the count — this is what keeps the prune channel alive (the add channel runs every session; the counter must not silently reset under it).
 2. **Exclusion:** rules already demoted to lazy reference files (e.g. `k0-discipline.md` — the body carries a `**Demoted:**` line) are excluded from the dormancy audit and from future `## Decay check` sections — demotion is the terminal decay state; expected-dormant is not a signal.

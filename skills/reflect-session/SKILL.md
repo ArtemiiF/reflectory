@@ -17,14 +17,28 @@ argument-hint: "[optional: path to a past .jsonl session file]"
 
 # /reflect-session
 
-> **Where the scripts live.** `_system/scripts/…` sits wherever this skill was
-> installed from: inside the plugin when reflectory is installed as one
-> (`${CLAUDE_PLUGIN_ROOT}/_system/scripts/…`), or inside the data repo on a
-> machine bootstrapped from a full clone (`~/.claude/local-forks/_system/scripts/…`).
-> `~/.claude/local-forks` is the DATA path either way — rules, skills, session
-> logs. Resolve a script by trying the plugin root first and the data repo
-> second; do not assume one layout.
-
+> **Where the machinery lives.** `_system/…` and the system skills sit wherever this
+> skill was installed from: inside the plugin when reflectory is installed as one,
+> inside the data repo on a machine bootstrapped from a full clone.
+> `~/.claude/local-forks` is the DATA path either way — rules, personal skills,
+> session logs. Every Bash call that needs the machinery opens with these three
+> lines (the shell resets between calls, so `${R}` never survives to the next one;
+> when you need the root for a **file read** instead, make one such call that just
+> echoes it):
+>
+> ```bash
+> R="${CLAUDE_PLUGIN_ROOT:-$(head -1 "${LOCAL_FORKS:-$HOME/.claude/local-forks}"/_meta/machinery-root 2>/dev/null)}"
+> [ -d "${R}/_system/scripts" ] || R="<the directory you read this SKILL.md from>/../.."
+> [ -d "${R}/_system/scripts" ] || { echo "reflectory machinery not found — run bootstrap.sh" >&2; exit 1; }
+> ```
+>
+> `_meta/machinery-root` is written by `bootstrap.sh` into the data repo it was
+> pointed at (`${LOCAL_FORKS}`, default `~/.claude/local-forks`) — that process is
+> the one that knows where it ran from. Before the first bootstrap on a machine the
+> pointer does not exist yet, which is what the second line is for: this file lives
+> at `<root>/skills/<name>/SKILL.md`, so the directory you opened it from, two
+> levels up, IS the root. `CLAUDE_PLUGIN_ROOT` is empty in a skill's own shell and
+> only helps inside plugin hooks.
 
 Walk back through the conversation that just happened, find concrete points where the user's agent setup could be improved, propose changes, and apply only what the user explicitly approves. The rule layers and skills are shared between Claude Code and Codex, so a finding harvested in one agent usually applies to both — say which agent it came from when it does not. Persist every approved change in `~/.claude/local-forks/` (git-tracked, pushed to GitHub) and — for plugin artefacts — also rewrite the corresponding file inside the plugin cache.
 
@@ -33,11 +47,11 @@ The system is described in `README.md` (overview, layout, fork lifecycle) and `m
 ## Inputs
 
 - The current conversation context (transcript Claude already has in scope).
-- Optional argument: an absolute path to a past transcript when the user wants to reflect on an earlier session instead of the current one — `~/.claude/projects/.../<uuid>.jsonl` for Claude Code, `~/.codex/sessions/<Y>/<M>/<D>/rollout-*.jsonl` for Codex. `_system/scripts/list-sessions.sh --agent all` lists both; `session-digest.py` reads either.
+- Optional argument: an absolute path to a past transcript when the user wants to reflect on an earlier session instead of the current one — `~/.claude/projects/.../<uuid>.jsonl` for Claude Code, `~/.codex/sessions/<Y>/<M>/<D>/rollout-*.jsonl` for Codex. `${R}/_system/scripts/list-sessions.sh --agent all` lists both; `session-digest.py` reads either.
 
 ## Preconditions
 
-- `~/.claude/local-forks/` exists, is a git repo, has an `origin` remote, and `git ls-remote origin` succeeds. If any of these fails, run the pre-flight + init wizard from `~/.claude/local-forks/_system/_shared/init-remote.md` before continuing.
+- `~/.claude/local-forks/` exists, is a git repo, has an `origin` remote, and `git ls-remote origin` succeeds. If any of these fails, run the pre-flight + init wizard from `${R}/_system/_shared/init-remote.md` before continuing.
 - The user has consented to local file mutations (running this skill counts).
 - `gh` CLI is authenticated (verified by the pre-flight).
 
@@ -47,7 +61,7 @@ Steps run strictly in order. A step that fails twice → stop, surface state to 
 
 ### Step 0. Pre-flight
 
-Execute the algorithm in `~/.claude/local-forks/_system/_shared/init-remote.md`. If state is not `READY`, walk the user through the init wizard. Only proceed to Step 1 after `READY`.
+Execute the algorithm in `${R}/_system/_shared/init-remote.md`. If state is not `READY`, walk the user through the init wizard. Only proceed to Step 1 after `READY`.
 
 ### Step 1. Scope source
 
@@ -58,7 +72,7 @@ Do not silently mix sources. Tell the user which source is in scope.
 
 ### Step 2. Extract findings using the reflection method
 
-Open and read `method.md` at `~/.claude/local-forks/skills/reflect-session/method.md`. This path exists in both install modes: the init wizard (Step 0) clones the repo there, and bootstrap installs additionally expose the same file via the symlink `~/.claude/skills/reflect-session/method.md` — single source of truth either way. Execute its seven phases (0–6) in order:
+Open and read `method.md` at `${R}/skills/reflect-session/method.md` — it ships beside this SKILL.md, wherever the machinery is installed. Resolve `${R}` first (see the note at the top), then execute the seven phases (0–6) in order:
 
 Before Phase 0, load the **corrections queue** if it exists: `~/.claude/local-forks/_local/corrections-queue.jsonl` — one JSON line per correction-bearing prompt, captured live by the `capture-corrections.py` UserPromptSubmit hook (possibly from sessions that were never reflected on). Entries whose `session_id` differs from the current session are Phase 1 observation candidates the current transcript cannot show; entries from the current session duplicate what the transcript already contains and only corroborate. A queue entry is a **candidate, not a finding** — it still passes the full Phase 1 evidence bar (quote, context, expected action) and Phase 2 generalisability filter; an entry whose surrounding context is unrecoverable is dropped. A missing or empty queue is normal (the hook may not be registered).
 
@@ -180,13 +194,13 @@ Before composing the commit:
 
 1. Regenerate the fork index so `INDEX.md` reflects the new state:
    ```
-   bash ~/.claude/local-forks/_system/scripts/build-index.sh
+   bash ${R}/_system/scripts/build-index.sh
    ```
    Idempotent; if no B-category finding was applied (no new fork created or _meta.json touched), the only change is the «last regenerated» timestamp line — that's fine, it ships in the same commit.
 
 2. Validate frontmatter in every `*.md` we may have touched (including the new `_sessions/<...>-reflect.md` from Step 5.5):
    ```
-   bash ~/.claude/local-forks/_system/scripts/validate-frontmatter.sh
+   bash ${R}/_system/scripts/validate-frontmatter.sh
    ```
    Exits non-zero on any malformed YAML frontmatter. If it fails, do NOT commit — fix the offending file first and re-run.
 
@@ -198,7 +212,7 @@ Before composing the commit:
 
 4. Bump the push timestamp so it ships in the same commit (no amend, no force-push):
    ```
-   bash ~/.claude/local-forks/_system/scripts/update-last-push.sh
+   bash ${R}/_system/scripts/update-last-push.sh
    ```
    Writes the current UTC into `_meta/remote.json:last_push_ok_at`. Stage `_meta/remote.json` along with the other approved changes — one commit per pipeline.
 
@@ -247,7 +261,7 @@ Tell the user:
 
 | Symptom | Response |
 |---|---|
-| `~/.claude/local-forks/_system/_shared/init-remote.md` returns not `READY` | Stop, hand off to the init wizard, do not proceed. |
+| `${R}/_system/_shared/init-remote.md` returns not `READY` | Stop, hand off to the init wizard, do not proceed. |
 | Plugin cache version on disk differs from the one recorded in `<plugin>/_meta.json` | This is a `/sync-upstream` job, not `/reflect-session`. Surface and stop. |
 | `git push` fails after one retry | Local commit stays, surface the error and the suggested `git push` command for the user to run manually. |
 | User declines all findings | Exit cleanly with «no changes applied», do not commit an empty change. |

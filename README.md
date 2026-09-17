@@ -177,8 +177,10 @@ the model merely sees a reference and may or may not open it. So the layers are
 concatenated into one generated file:
 
 ```bash
-~/.claude/local-forks/_system/scripts/build-agents-md.sh          # write $CODEX_HOME/AGENTS.md
-~/.claude/local-forks/_system/scripts/build-agents-md.sh --check  # stale?
+R="${CLAUDE_PLUGIN_ROOT:-$(head -1 "${LOCAL_FORKS:-$HOME/.claude/local-forks}"/_meta/machinery-root 2>/dev/null)}"
+[ -d "${R}/_system/scripts" ] || echo "no machinery pointer — run bootstrap.sh first" >&2
+"${R}"/_system/scripts/build-agents-md.sh          # write $CODEX_HOME/AGENTS.md
+"${R}"/_system/scripts/build-agents-md.sh --check  # stale?
 ```
 
 `@`-imports inside the layers are expanded inline (4-hop ceiling, cycle guard),

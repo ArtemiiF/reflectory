@@ -30,6 +30,7 @@
 #                                                     # for Phase 0 (N = dormant run)
 
 import glob
+import json
 import os
 import re
 import sys
@@ -40,15 +41,18 @@ SESSIONS = os.path.join(
     "_sessions",
 )
 FRICTION = os.path.join(SESSIONS, "friction-metrics.tsv")
+ALIASES = os.path.join(os.path.dirname(SESSIONS), "_meta", "rule-aliases.json")
 
 # A decay line may carry a stable rule-id prefix: `- [k1-foo] <label> — validated`.
 # Legacy lines without the prefix fall back to a normalised label key (see norm_key).
 # Trailing free-text after the status token is tolerated (e.g.
-# `— dormant(5) → демоут в lazy (Finding 3)`) — the status is captured, the rest
-# ignored — so an annotated decay line is never silently dropped.
+# `— dormant(5) → демоут в lazy (Finding 3)`) — the FIRST status token on the line
+# is captured and everything after it is discarded — so an annotated decay line is never silently dropped.
 DECAY_LINE = re.compile(
-    r"^-\s+(?:\[(?P<id>[a-z0-9][a-z0-9-]*)\]\s+)?"
-    r"(?P<label>.*?)\s+—\s+(?P<status>validated|dormant(?:\(\d+\))?|misfiring)(?:\s.*)?$"
+    r"^-\s+`?(?:\[(?P<id>[a-z0-9][a-z0-9-]*)\]`?\s+)?"
+    r"(?P<label>.*?)`?\s+—\s+"
+    r"(?P<status>validated|dormant(?:\(\d+\))?|dormancy\s+\d+(?:[–-]\d+)?|misfiring)"
+    r"(?:\W.*)?$"
 )
 FM_COUNTER = re.compile(
     r"^(findings_applied|findings_skipped|findings_discarded):\s*(\d+)\s*$"
@@ -98,6 +102,12 @@ def is_retired(key, entries, retired) -> bool:
     # Retired unless a decay line postdates the retirement — a rule re-added
     # under the same id resumes its history and re-enters the feed.
     return key in retired and retired[key] >= entries[-1][0]
+
+
+def canon_status(status: str) -> str:
+    # Legacy logs wrote `— dormancy 4–5` where current ones write `— dormant(4)`.
+    # Both mean the same audit outcome; normalise so one rule keeps one history.
+    return "dormant" if status.startswith("dormancy") else status
 
 
 def consecutive_dormant(entries) -> int:
@@ -181,12 +191,43 @@ def main() -> int:
                         f"[{m.group('id')}] {m.group('label')}"
                         if m.group("id") else m.group("label")
                     )
-                    history[key].append((date, m.group("status")))
+                    history[key].append((date, canon_status(m.group("status"))))
                     labels[key] = display
                     if m.group("id"):
                         id_raw_label[key] = m.group("label")
                     audits += 1
         sessions.append((date, topic, findings))
+
+    # Explicit alias map (`_meta/rule-aliases.json`: {"<norm-label>": "<id>"}).
+    # The automatic bridge below only folds the ONE label spelling that appears on
+    # the id-carrying line; a rule relabelled more than once keeps a second bucket
+    # and shows a phantom dormancy streak. Aliases are hand-curated, so folding
+    # stays auditable instead of guessing by string similarity.
+    aliases = {}
+    if os.path.exists(ALIASES):
+        try:
+            with open(ALIASES, encoding="utf-8") as fh:
+                aliases = json.load(fh)
+        except (OSError, ValueError) as exc:
+            print(f"warning: unreadable {ALIASES}: {exc}", file=sys.stderr)
+        if not isinstance(aliases, dict):
+            print(f"warning: {ALIASES} is not a JSON object — ignored", file=sys.stderr)
+            aliases = {}
+        # Values are used as dict keys below; a list or object there would raise
+        # TypeError past the tolerant read, which is the crash this guards against.
+        aliases = {
+            k: v for k, v in aliases.items()
+            if isinstance(k, str) and isinstance(v, str)
+        }
+        for legacy_label, target_id in aliases.items():
+            if legacy_label.startswith("_"):
+                continue
+            legacy = norm_key(legacy_label)
+            if legacy in history and legacy != target_id:
+                history[target_id] = sorted(history[legacy] + history.get(target_id, []))
+                del history[legacy]
+                labels.pop(legacy, None)
+                labels.setdefault(target_id, f"[{target_id}] {legacy_label}")
 
     # Continuity bridge: when a rule that used to be logged by bare label gets a
     # back-filled [id], its pre-id history sits under the norm-label key. Fold

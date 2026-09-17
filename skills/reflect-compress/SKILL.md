@@ -17,14 +17,28 @@ argument-hint: "[optional: path to a specific rule file to compress]"
 
 # /reflect-compress
 
-> **Where the scripts live.** `_system/scripts/…` sits wherever this skill was
-> installed from: inside the plugin when reflectory is installed as one
-> (`${CLAUDE_PLUGIN_ROOT}/_system/scripts/…`), or inside the data repo on a
-> machine bootstrapped from a full clone (`~/.claude/local-forks/_system/scripts/…`).
-> `~/.claude/local-forks` is the DATA path either way — rules, skills, session
-> logs. Resolve a script by trying the plugin root first and the data repo
-> second; do not assume one layout.
-
+> **Where the machinery lives.** `_system/…` and the system skills sit wherever this
+> skill was installed from: inside the plugin when reflectory is installed as one,
+> inside the data repo on a machine bootstrapped from a full clone.
+> `~/.claude/local-forks` is the DATA path either way — rules, personal skills,
+> session logs. Every Bash call that needs the machinery opens with these three
+> lines (the shell resets between calls, so `${R}` never survives to the next one;
+> when you need the root for a **file read** instead, make one such call that just
+> echoes it):
+>
+> ```bash
+> R="${CLAUDE_PLUGIN_ROOT:-$(head -1 "${LOCAL_FORKS:-$HOME/.claude/local-forks}"/_meta/machinery-root 2>/dev/null)}"
+> [ -d "${R}/_system/scripts" ] || R="<the directory you read this SKILL.md from>/../.."
+> [ -d "${R}/_system/scripts" ] || { echo "reflectory machinery not found — run bootstrap.sh" >&2; exit 1; }
+> ```
+>
+> `_meta/machinery-root` is written by `bootstrap.sh` into the data repo it was
+> pointed at (`${LOCAL_FORKS}`, default `~/.claude/local-forks`) — that process is
+> the one that knows where it ran from. Before the first bootstrap on a machine the
+> pointer does not exist yet, which is what the second line is for: this file lives
+> at `<root>/skills/<name>/SKILL.md`, so the directory you opened it from, two
+> levels up, IS the root. `CLAUDE_PLUGIN_ROOT` is empty in a skill's own shell and
+> only helps inside plugin hooks.
 
 `/reflect-session` is the add channel; its Phase 0 prunes at most 2 dormant rules per run as a side effect. Nothing walks the WHOLE rule layer and asks «what here is dead weight?» — so the always-on context grows monotonically. This skill is the dedicated subtract channel: a batch audit of the existing rules against dormancy stats, the live filesystem, and each other, ending in per-item-approved reductions.
 
@@ -33,12 +47,12 @@ The analytical scaffolding is in `method.md` (five audit phases). The system lay
 ## Inputs
 
 - Rule files. No argument → the whole tracked layer: every rule `.md` under `~/.claude/local-forks/_tracked/` (including `machines/*/` layers and lazy reference files like `k2-environment.md`). Argument → that file only.
-- `python3 ~/.claude/local-forks/_system/scripts/rule-stats.py --dormancy` — the dormancy feed.
-- `python3 ~/.claude/local-forks/_system/scripts/check-stale-refs.py <files>` — the dead-pointer feed.
+- `python3 ${R}/_system/scripts/rule-stats.py --dormancy` — the dormancy feed.
+- `python3 ${R}/_system/scripts/check-stale-refs.py <files>` — the dead-pointer feed.
 
 ## Preconditions
 
-Same as `/reflect-session`: `~/.claude/local-forks/` is a READY git repo (pre-flight per `_system/_shared/init-remote.md`); running this skill is consent to local file mutations.
+Same as `/reflect-session`: `~/.claude/local-forks/` is a READY git repo (pre-flight per `${R}/_system/_shared/init-remote.md`); running this skill is consent to local file mutations.
 
 ## Algorithm
 
@@ -50,7 +64,7 @@ Run both scripts above. Their output is the evidence floor: a prune or repair pr
 
 ### Step 2. Audit using the compress method
 
-Open and read `method.md` at `~/.claude/local-forks/skills/reflect-compress/method.md` (same both-install-modes guarantee as reflect-session's method). Execute its phases in order — X (stale refs), D (dormancy), C (contradictions), M (merge), V (verbosity) — then the shared self-test.
+Open and read `method.md` at `${R}/skills/reflect-compress/method.md` — it ships beside this SKILL.md. Execute its phases in order — X (stale refs), D (dormancy), C (contradictions), M (merge), V (verbosity) — then the shared self-test.
 
 Cap: **max 10 findings per run**, priority X > D > C > M > V (repairs before prunes before polish). A healthy rule layer legitimately produces zero findings — inventing reductions to justify the run is a defect.
 

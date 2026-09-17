@@ -2,7 +2,7 @@
 
 Shared library used by `/reflect-session` and `/sync-upstream`. Not a standalone slash-command. Both skills run the pre-flight algorithm below at step 0 and, if needed, walk the user through the init wizard before continuing.
 
-> **Access pattern.** This file lives at `~/.claude/local-forks/_system/_shared/init-remote.md` and is **not copied** into `~/.claude/skills/` by `bootstrap.sh` — it has no `SKILL.md`, so the skill-installation loop skips it. Skills reference it by **absolute path** rather than relative path, because the relative path would resolve against `~/.claude/skills/<skill>/` post-bootstrap (or against the plugin cache, for marketplace installs) and break. The canonical local-forks location (`~/.claude/local-forks/`) is guaranteed to exist after wizard step 0 below, so the absolute path always resolves.
+> **Access pattern.** This file lives at `${R}/_system/_shared/init-remote.md`, where `${R}` is the machinery root — inside the plugin under a plugin install, inside the data repo on a full clone (each SKILL.md opens with the line that resolves it). It is **not** copied into `~/.claude/skills/` by `bootstrap.sh`: it has no `SKILL.md`, so the skill loop skips it. Skills address it through `${R}` rather than a relative path, which would resolve against `~/.claude/skills/<skill>/` or against the plugin cache and break.
 
 ## When to run
 
@@ -32,19 +32,40 @@ Step 0 seeds the working tree if needed; then three sequential questions via `As
 
 ### Step 0 — Seed the working tree (only when state is `NOT_INITIALIZED`)
 
-`~/.claude/local-forks/` does not exist yet — clone the template repo to seed the scripts, shared libraries, and layout the skills depend on:
+`~/.claude/local-forks/` does not exist yet. What to seed it with depends on whether
+the machinery is already on the machine — cloning the template unconditionally would
+lay down a SECOND copy of `_system/`, which then drifts from the installed one and
+silently serves stale scripts to the skills.
+
+**If reflectory is installed as a plugin** (the usual case — this file was read out of
+the plugin), the data repo starts empty and carries data only:
+
+```bash
+mkdir -p ~/.claude/local-forks/skills && git -C ~/.claude/local-forks init
+bash "${R}/_system/bootstrap.sh"
+```
+
+`skills/` is created empty on purpose: the targeting resolver exits non-zero when that
+directory is missing, and bootstrap turns that into an install error on what is in fact
+a correct first run. With the directory present but empty the resolver exits 0 and
+bootstrap only notes that the stale sweep found nothing to sweep. The repo has no `origin` yet either — Question 1 below
+creates or attaches one, so on this branch it ends with `git remote add origin <url>`
+rather than `set-url`.
+
+**If there is no plugin** (full-clone layout), the data repo carries the machinery too:
 
 ```bash
 git clone https://github.com/ArtemiiF/reflectory.git ~/.claude/local-forks
-chmod +x ~/.claude/local-forks/_system/scripts/pre-commit
-ln -sfn ~/.claude/local-forks/_system/scripts/pre-commit ~/.claude/local-forks/.git/hooks/pre-commit
+bash ~/.claude/local-forks/_system/bootstrap.sh
 ```
 
-(The hook link mirrors bootstrap.sh Step 2.5 — plugin-marketplace users never run
-bootstrap, and without it commits into the data repo would skip the frontmatter
-verification gate.)
+Either way `bootstrap.sh` records the machinery root in `_meta/machinery-root` and
+writes the pre-commit hook itself — a generated file that re-finds the gate at commit
+time. Do not link the hook to a script path by hand: under a plugin install that path
+carries a version number, and the next plugin update leaves the link dangling with the
+gates silently dead.
 
-After the clone, `origin` still points at the **template** repo, which the user cannot push to. Questions 1–3 below MUST end with `git remote set-url origin <user's own repo>` (create-or-attach), never with the template URL left in place. Skip this step entirely when the directory already exists (states `NO_REMOTE`, `BROKEN`).
+After the clone, `origin` still points at the **template** repo, which the user cannot push to. Questions 1–3 below MUST end with `git remote set-url origin <user's own repo>` (create-or-attach), never with the template URL left in place. On the plugin branch above there is no remote at all, so the same step is `git remote add origin <user's own repo>`. Skip this step entirely when the directory already exists (states `NO_REMOTE`, `BROKEN`).
 
 ### Question 1 — Mode
 

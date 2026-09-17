@@ -29,3 +29,8 @@ __pycache__/
 
 # Per-machine layer selector (set by bootstrap detect_machine). Per-machine, not for git.
 /_tracked/machines/current
+
+# Machinery pointer, written by bootstrap into whatever LOCAL_FORKS points at.
+# On a full-clone layout that is THIS repo — an absolute per-machine path must
+# not ship to other machines.
+/_meta/machinery-root

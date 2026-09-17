@@ -47,6 +47,7 @@ LOCAL_FORKS="${LOCAL_FORKS:-${HOME}/.claude/local-forks}"
 # next to this script instead, and LOCAL_FORKS means data from here on.
 SYS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="${SYS_DIR}/scripts"
+MACHINERY_ROOT="$(dirname "${SYS_DIR}")"
 
 SKILLS_DIR="${HOME}/.claude/skills"
 CODEX_SKILLS_DIR="${CODEX_HOME:-${HOME}/.codex}/skills"
@@ -54,6 +55,18 @@ PLUGINS_CACHE="${HOME}/.claude/plugins/cache"
 INSTALLED_JSON="${HOME}/.claude/plugins/installed_plugins.json"
 TRACKED_DIR="${LOCAL_FORKS}/_tracked"
 LIVE_CLAUDE_DIR="${HOME}/.claude"
+
+# The machinery pointer. Skills, sub-agent prompts and generated hooks all need
+# the machinery root, and none of them can rediscover it: CLAUDE_PLUGIN_ROOT is
+# unset in a skill's own shell, a sub-agent never reads the SKILL.md that would
+# carry a resolver, and a cache directory is version-numbered. So bootstrap —
+# the one process that knows where it was run from — writes the answer down at a
+# path that never moves, and everything else reads one line. Per-machine state:
+# gitignored, rewritten on every bootstrap.
+write_machinery_pointer() {
+  mkdir -p "${LOCAL_FORKS}/_meta"
+  printf '%s\n' "${MACHINERY_ROOT}" > "${LOCAL_FORKS}/_meta/machinery-root"
+}
 
 # Summary arrays — declared early so the ERR trap can print whatever state
 # accumulated before the failure.
@@ -171,9 +184,9 @@ backup_if_differs() {
   fi
 }
 
-# Install a single skill .md as a symlink pointing into local-forks/_system/<n>/.
+# Install a single skill .md as a symlink pointing into local-forks/skills/<n>/.
 # Single source of truth: editing ~/.claude/skills/<n>/<file>.md is the same as
-# editing local-forks/_system/<n>/<file>.md — no second copy to keep in sync,
+# editing local-forks/skills/<n>/<file>.md — no second copy to keep in sync,
 # no drift detection needed.
 #
 # Migration from the previous copy-based bootstrap: if dst is a regular file
@@ -241,6 +254,10 @@ if [[ ! -f "${INSTALLED_JSON}" ]]; then
 fi
 
 mkdir -p "${SKILLS_DIR}"
+
+# Step 0.5 — write the machinery pointer before anything reads it.
+write_machinery_pointer
+echo "==> Machinery root: ${MACHINERY_ROOT} (recorded in _meta/machinery-root)"
 
 # Step 1 — point the machine-specific layer at the detected machine.
 # This runs BEFORE skill install so the id it resolves can be handed to the
@@ -549,14 +566,19 @@ if [[ -f "${SCRIPTS_DIR}/pre-commit" && -d "${LOCAL_FORKS}/.git/hooks" ]]; then
 # Finds the gate at commit time so a plugin update cannot leave it dangling.
 set -uo pipefail
 
+# The skills' resolver plus one candidate they cannot have: git runs this hook
+# from the repo root, so a full-clone layout carries the machinery right there.
+# No version-numbered glob — sorting cache directories by mtime picks whichever
+# was touched last, not the installed one.
+root_file="${LOCAL_FORKS:-${HOME}/.claude/local-forks}/_meta/machinery-root"
 candidates=()
 [[ -n "${CLAUDE_PLUGIN_ROOT:-}" ]] && candidates+=("${CLAUDE_PLUGIN_ROOT}/_system/scripts/pre-commit")
+[[ -r "${root_file}" ]] && candidates+=("$(head -1 "${root_file}")/_system/scripts/pre-commit")
+# The pointer is absent until the first bootstrap, and a git hook has no
+# CLAUDE_PLUGIN_ROOT, so the stable install roots stay in the chain: without them
+# a fresh plugin-install machine could not commit into the data repo at all.
 candidates+=("${HOME}/.claude/plugins/marketplaces/reflectory/_system/scripts/pre-commit")
-# newest installed plugin version, if any
-while IFS= read -r c; do candidates+=("${c}"); done < <(
-  ls -td "${HOME}"/.claude/plugins/cache/reflectory/reflectory/*/_system/scripts/pre-commit 2>/dev/null
-)
-# full-clone layout: the data repo carries the machinery itself
+candidates+=("${HOME}/.codex/.tmp/marketplaces/reflectory/_system/scripts/pre-commit")
 candidates+=("$(git rev-parse --show-toplevel 2>/dev/null)/_system/scripts/pre-commit")
 
 for c in "${candidates[@]}"; do
@@ -578,14 +600,38 @@ fi
 # hook registrations survived the machine move; registration itself is a
 # one-time manual step (see each script's header for the settings.json shape).
 if [[ -f "${LIVE_CLAUDE_DIR}/settings.json" ]]; then
-  if ! grep -q "reflect-reminder" "${LIVE_CLAUDE_DIR}/settings.json"; then
-    echo "==> NOTE: reflect-reminder Stop hook is not registered in settings.json."
-    echo "    Add it to hooks.Stop: python3 ${SCRIPTS_DIR}/reflect-reminder.py"
-  fi
-  if ! grep -q "capture-corrections" "${LIVE_CLAUDE_DIR}/settings.json"; then
-    echo "==> NOTE: capture-corrections UserPromptSubmit hook is not registered in settings.json."
-    echo "    Add it to hooks.UserPromptSubmit: python3 ${SCRIPTS_DIR}/capture-corrections.py"
-  fi
+  # Presence of the name is not enough: a registration may point at a path that
+  # no longer exists (a machine that used to carry a second copy of the machinery,
+  # a plugin version directory that was cleaned up). A hook whose script is gone
+  # fails silently — nothing in the session says the reminder stopped firing.
+  check_hook_registration() {
+    local name="$1" event="$2" registered
+    if ! grep -q "${name}" "${LIVE_CLAUDE_DIR}/settings.json"; then
+      echo "==> NOTE: ${name} ${event} hook is not registered in settings.json."
+      echo "    Add to hooks.${event}: python3 ${SCRIPTS_DIR}/${name}.py"
+      echo "    (absolute path — the hook runner expands neither ~ nor \$HOME. If that path"
+      echo "     carries a version number, re-run bootstrap after a plugin update: this check"
+      echo "     reports the registration as dead once the version directory is gone.)"
+      return
+    fi
+    # Address-then-block, not `| head -1`: under `set -o pipefail` the closed pipe
+    # kills the whole assignment on a large file, taking bootstrap with it. And
+    # `{` is not a valid `s///` flag — it has to hang off an address match.
+    registered="$(sed -n "/${name}\.py/{s|.*\"command\"[^\"]*\"[^\"]*python3 \([^\"]*${name}\.py\).*|\1|p;q;}" \
+      "${LIVE_CLAUDE_DIR}/settings.json")"
+    # A hand-written registration may carry ~ or $HOME; `-f` expands neither, and
+    # reporting such a path as dead would be a false alarm.
+    registered="${registered/#\~/${HOME}}"
+    registered="${registered//\$HOME/${HOME}}"
+    if [[ -n "${registered}" && ! -f "${registered}" ]]; then
+      echo "==> WARNING: ${name} ${event} hook points at a path that does not exist:"
+      echo "      ${registered}"
+      echo "    The hook is dead and fails silently. Repoint it at:"
+      echo "      python3 ${SCRIPTS_DIR}/${name}.py"
+    fi
+  }
+  check_hook_registration reflect-reminder Stop
+  check_hook_registration capture-corrections UserPromptSubmit
   if [[ -f "${TRACKED_DIR}/statusline.sh" ]] && ! grep -q "statusline.sh" "${LIVE_CLAUDE_DIR}/settings.json"; then
     echo "==> NOTE: statusLine is not registered in settings.json."
     echo "    Add: statusLine.command = bash ${LIVE_CLAUDE_DIR}/statusline.sh"
