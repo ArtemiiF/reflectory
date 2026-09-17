@@ -92,6 +92,43 @@ changes land and get committed there) and points `origin` at your own private
 GitHub repo. Don't run `bootstrap.sh` in this mode — the plugin already provides
 the skills.
 
+### Option A2 — install into Codex
+
+Codex reads the same repository. Its plugin loader accepts this plugin's manifest
+directly, and the bundled `.codex-plugin/plugin.json` gives it a native entry:
+
+```
+codex plugin marketplace add ArtemiiF/reflectory
+codex plugin add reflectory@reflectory
+```
+
+Skills then appear namespaced — `reflectory:reflect-session` and the rest.
+
+Two things a Codex install does not do, both on purpose:
+
+- **Hooks stay manual.** A plugin-declared `hooks` entry does fire, but the hook
+  scripts need the event payload on stdin (the prompt text, the transcript path),
+  and only a user-level registration was measured to deliver it. Add these to
+  `~/.codex/hooks.json`, merging with whatever is already there:
+
+  ```json
+  { "hooks": {
+      "UserPromptSubmit": [ { "hooks": [ { "type": "command",
+        "command": "python3 ~/.claude/plugins/marketplaces/reflectory/_system/scripts/capture-corrections.py" } ] } ],
+      "Stop": [ { "hooks": [ { "type": "command",
+        "command": "python3 ~/.claude/plugins/marketplaces/reflectory/_system/scripts/reflect-reminder.py" } ] } ]
+  } }
+  ```
+
+  Codex pins a `trusted_hash` per hook in `config.toml` and will ask to trust the
+  new entries once.
+
+- **Targeting does not apply.** `install.json` governs the `bootstrap.sh` install
+  path — which skill belongs on which machine and agent. A plugin install hands
+  Codex every skill in the plugin, so `/reflect-session` and `/reflect-archive`
+  are available there even though their manifests target Claude Code; their prose
+  is agent-neutral, but the delegation contract under Codex is not yet exercised.
+
 ### Option B — clone + bootstrap (no marketplace)
 
 ```bash
@@ -214,8 +251,8 @@ encrypted.
 
 ## Requirements
 
-- Claude Code with skills support
-- Codex (optional) — `codex-cli`; the Codex legs are skipped on machines without it
+- Claude Code with skills support, or Codex, or both
+- Codex users: `codex-cli` 0.154 or newer (earlier versions wrote transcripts in a shape the reader also understands, but the skill install shape was measured against 0.154)
 - `git`, `gh` (GitHub CLI) authenticated, `bash`, `python3`, `jq`
 
 ## License
