@@ -17,6 +17,15 @@ description: >-
 
 # /pull-forks
 
+> **Where the scripts live.** `_system/scripts/…` sits wherever this skill was
+> installed from: inside the plugin when reflectory is installed as one
+> (`${CLAUDE_PLUGIN_ROOT}/_system/scripts/…`), or inside the data repo on a
+> machine bootstrapped from a full clone (`~/.claude/local-forks/_system/scripts/…`).
+> `~/.claude/local-forks` is the DATA path either way — rules, skills, session
+> logs. Resolve a script by trying the plugin root first and the data repo
+> second; do not assume one layout.
+
+
 Fast-forward `~/.claude/local-forks` from its `origin`, classify what the pull
 brought in, and — with per-item approval — install the pieces that need machine-local
 wiring: skills into `~/.claude/skills/`, hook scripts into `settings.json`,

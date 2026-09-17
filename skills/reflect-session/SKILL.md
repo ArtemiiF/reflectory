@@ -17,6 +17,15 @@ argument-hint: "[optional: path to a past .jsonl session file]"
 
 # /reflect-session
 
+> **Where the scripts live.** `_system/scripts/…` sits wherever this skill was
+> installed from: inside the plugin when reflectory is installed as one
+> (`${CLAUDE_PLUGIN_ROOT}/_system/scripts/…`), or inside the data repo on a
+> machine bootstrapped from a full clone (`~/.claude/local-forks/_system/scripts/…`).
+> `~/.claude/local-forks` is the DATA path either way — rules, skills, session
+> logs. Resolve a script by trying the plugin root first and the data repo
+> second; do not assume one layout.
+
+
 Walk back through the conversation that just happened, find concrete points where the user's Claude Code setup could be improved, propose changes, and apply only what the user explicitly approves. Persist every approved change in `~/.claude/local-forks/` (git-tracked, pushed to GitHub) and — for plugin artefacts — also rewrite the corresponding file inside the plugin cache.
 
 The system is described in `README.md` (overview, layout, fork lifecycle) and `method.md` (analytical scaffolding for Step 2).

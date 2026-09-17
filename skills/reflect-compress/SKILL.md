@@ -17,6 +17,15 @@ argument-hint: "[optional: path to a specific rule file to compress]"
 
 # /reflect-compress
 
+> **Where the scripts live.** `_system/scripts/…` sits wherever this skill was
+> installed from: inside the plugin when reflectory is installed as one
+> (`${CLAUDE_PLUGIN_ROOT}/_system/scripts/…`), or inside the data repo on a
+> machine bootstrapped from a full clone (`~/.claude/local-forks/_system/scripts/…`).
+> `~/.claude/local-forks` is the DATA path either way — rules, skills, session
+> logs. Resolve a script by trying the plugin root first and the data repo
+> second; do not assume one layout.
+
+
 `/reflect-session` is the add channel; its Phase 0 prunes at most 2 dormant rules per run as a side effect. Nothing walks the WHOLE rule layer and asks «what here is dead weight?» — so the always-on context grows monotonically. This skill is the dedicated subtract channel: a batch audit of the existing rules against dormancy stats, the live filesystem, and each other, ending in per-item-approved reductions.
 
 The analytical scaffolding is in `method.md` (five audit phases). The system layout is in `README.md`.

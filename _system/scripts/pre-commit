@@ -27,7 +27,14 @@ set -uo pipefail
 # root), not a hardcoded path — otherwise a clone would validate the wrong tree.
 LOCAL_FORKS="$(git rev-parse --show-toplevel 2>/dev/null || echo "${HOME}/.claude/local-forks")"
 export LOCAL_FORKS
-VALIDATOR="${LOCAL_FORKS}/_system/scripts/validate-frontmatter.sh"
+
+# The validators are siblings of THIS file, wherever it was installed from —
+# git links this hook into .git/hooks, and the link may point into a plugin
+# directory rather than into the data repo. Resolve through the symlink.
+HOOK_PATH="${BASH_SOURCE[0]}"
+[[ -L "${HOOK_PATH}" ]] && HOOK_PATH="$(readlink -f -- "${HOOK_PATH}" 2>/dev/null || readlink -- "${HOOK_PATH}")"
+SCRIPTS_DIR="$(cd "$(dirname "${HOOK_PATH}")" && pwd)"
+VALIDATOR="${SCRIPTS_DIR}/validate-frontmatter.sh"
 
 # Each check degrades on its own. An earlier version exited 0 when a script was
 # missing, which silently disabled every check after it.
@@ -40,7 +47,7 @@ elif ! bash "${VALIDATOR}"; then
   exit 1
 fi
 
-MANIFEST_VALIDATOR="${LOCAL_FORKS}/_system/scripts/validate-manifests.sh"
+MANIFEST_VALIDATOR="${SCRIPTS_DIR}/validate-manifests.sh"
 
 if [[ ! -f "${MANIFEST_VALIDATOR}" ]]; then
   echo "pre-commit: validate-manifests.sh not found — manifest check skipped this commit." >&2
@@ -54,7 +61,7 @@ if [[ -n "${MANIFEST_VALIDATOR}" ]] && ! bash "${MANIFEST_VALIDATOR}"; then
   exit 1
 fi
 
-READER_CHECK="${LOCAL_FORKS}/_system/scripts/check-transcript-reader.sh"
+READER_CHECK="${SCRIPTS_DIR}/check-transcript-reader.sh"
 
 if [[ ! -f "${READER_CHECK}" ]]; then
   echo "pre-commit: check-transcript-reader.sh not found — reader check skipped this commit." >&2

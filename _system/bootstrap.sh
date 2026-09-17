@@ -38,6 +38,16 @@
 set -euo pipefail
 
 LOCAL_FORKS="${LOCAL_FORKS:-${HOME}/.claude/local-forks}"
+
+# Where the machinery lives, as opposed to where the DATA lives. The two used to
+# be the same directory — bootstrap cloned the whole repo into ~/.claude/local-forks
+# — but a plugin install keeps the scripts in the plugin and leaves only rules,
+# skills and session logs in the data repo. Resolving siblings by LOCAL_FORKS
+# then looks for them in a directory that no longer has them, so they are found
+# next to this script instead, and LOCAL_FORKS means data from here on.
+SYS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_DIR="${SYS_DIR}/scripts"
+
 SKILLS_DIR="${HOME}/.claude/skills"
 CODEX_SKILLS_DIR="${CODEX_HOME:-${HOME}/.codex}/skills"
 PLUGINS_CACHE="${HOME}/.claude/plugins/cache"
@@ -268,7 +278,7 @@ trap 'rm -f "${TARGETS_FILE}"' EXIT
 resolver_args=()
 [[ -n "${MACHINE_ID:-}" ]] && resolver_args+=(--machine "${MACHINE_ID}")
 TARGETS_OK=1
-if ! "${LOCAL_FORKS}/_system/scripts/skill-targets.sh" "${resolver_args[@]+"${resolver_args[@]}"}" \
+if ! "${SCRIPTS_DIR}/skill-targets.sh" "${resolver_args[@]+"${resolver_args[@]}"}" \
      > "${TARGETS_FILE}"; then
   TARGETS_OK=0
   echo "==> ERROR: skill targeting could not be resolved (message above)." >&2
@@ -491,7 +501,7 @@ fi
 # home exists — a machine without Codex gets nothing written.
 CODEX_HOME_DIR="${CODEX_HOME:-${HOME}/.codex}"
 if [[ -d "${CODEX_HOME_DIR}" ]]; then
-  if ! "${LOCAL_FORKS}/_system/scripts/build-agents-md.sh"; then
+  if ! "${SCRIPTS_DIR}/build-agents-md.sh"; then
     echo "==> NOTE: Codex rule layer NOT installed (see the message above)."
     echo "    Claude Code is unaffected; fix the cause and re-run bootstrap."
   fi
@@ -502,9 +512,9 @@ fi
 # See _system/scripts/pre-commit for why this exists (dual-circuit enforcement:
 # the prose instruction in /reflect-session Step 6 is advisory; the hook fires
 # on every commit regardless).
-if [[ -f "${LOCAL_FORKS}/_system/scripts/pre-commit" && -d "${LOCAL_FORKS}/.git/hooks" ]]; then
-  chmod +x "${LOCAL_FORKS}/_system/scripts/pre-commit"
-  ln -sfn -- "${LOCAL_FORKS}/_system/scripts/pre-commit" "${LOCAL_FORKS}/.git/hooks/pre-commit"
+if [[ -f "${SCRIPTS_DIR}/pre-commit" && -d "${LOCAL_FORKS}/.git/hooks" ]]; then
+  chmod +x "${SCRIPTS_DIR}/pre-commit"
+  ln -sfn -- "${SCRIPTS_DIR}/pre-commit" "${LOCAL_FORKS}/.git/hooks/pre-commit"
   echo "==> Installed pre-commit hook (frontmatter verification gate)"
 fi
 
@@ -514,11 +524,11 @@ fi
 if [[ -f "${LIVE_CLAUDE_DIR}/settings.json" ]]; then
   if ! grep -q "reflect-reminder" "${LIVE_CLAUDE_DIR}/settings.json"; then
     echo "==> NOTE: reflect-reminder Stop hook is not registered in settings.json."
-    echo "    Add it to hooks.Stop: python3 ${LOCAL_FORKS}/_system/scripts/reflect-reminder.py"
+    echo "    Add it to hooks.Stop: python3 ${SCRIPTS_DIR}/reflect-reminder.py"
   fi
   if ! grep -q "capture-corrections" "${LIVE_CLAUDE_DIR}/settings.json"; then
     echo "==> NOTE: capture-corrections UserPromptSubmit hook is not registered in settings.json."
-    echo "    Add it to hooks.UserPromptSubmit: python3 ${LOCAL_FORKS}/_system/scripts/capture-corrections.py"
+    echo "    Add it to hooks.UserPromptSubmit: python3 ${SCRIPTS_DIR}/capture-corrections.py"
   fi
   if [[ -f "${TRACKED_DIR}/statusline.sh" ]] && ! grep -q "statusline.sh" "${LIVE_CLAUDE_DIR}/settings.json"; then
     echo "==> NOTE: statusLine is not registered in settings.json."
@@ -548,7 +558,7 @@ if [[ -d "${CODEX_HOME:-${HOME}/.codex}" ]]; then
       echo "==> NOTE: ${hook_script} is not registered in ${CODEX_HOOKS_JSON} (${hook_event})."
       echo "    hooks.json has its own shape — add an entry under hooks.${hook_event}:"
       echo "      { \"hooks\": [ { \"type\": \"command\","
-      echo "          \"command\": \"python3 ${LOCAL_FORKS}/_system/scripts/${hook_script}.py\" } ] }"
+      echo "          \"command\": \"python3 ${SCRIPTS_DIR}/${hook_script}.py\" } ] }"
       echo "    The file already carries Superset entries — merge, do not replace."
       echo "    Codex pins a trusted_hash per hook in config.toml; after editing,"
       echo "    Codex asks to re-trust the hook before it runs again."

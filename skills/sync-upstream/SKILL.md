@@ -15,6 +15,15 @@ description: >-
 
 # /sync-upstream
 
+> **Where the scripts live.** `_system/scripts/…` sits wherever this skill was
+> installed from: inside the plugin when reflectory is installed as one
+> (`${CLAUDE_PLUGIN_ROOT}/_system/scripts/…`), or inside the data repo on a
+> machine bootstrapped from a full clone (`~/.claude/local-forks/_system/scripts/…`).
+> `~/.claude/local-forks` is the DATA path either way — rules, skills, session
+> logs. Resolve a script by trying the plugin root first and the data repo
+> second; do not assume one layout.
+
+
 Walk over every forked plugin artefact recorded in `~/.claude/local-forks/<plugin>/<kind>/<name>/`, detect whether the plugin's installed version on disk now differs from the baseline recorded in `<plugin>/_meta.json`, and — for each artefact that drifted — semantically re-apply our intent log on top of the new upstream content. Apply only what the user approves. Push to GitHub.
 
 The system is described in `README.md` (overview, layout, fork lifecycle) and `method.md` (analytical scaffolding for Step 4).

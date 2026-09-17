@@ -17,6 +17,15 @@ argument-hint: "[--top N] [--min-bytes BYTES] [paths...]"
 
 # /reflect-archive
 
+> **Where the scripts live.** `_system/scripts/…` sits wherever this skill was
+> installed from: inside the plugin when reflectory is installed as one
+> (`${CLAUDE_PLUGIN_ROOT}/_system/scripts/…`), or inside the data repo on a
+> machine bootstrapped from a full clone (`~/.claude/local-forks/_system/scripts/…`).
+> `~/.claude/local-forks` is the DATA path either way — rules, skills, session
+> logs. Resolve a script by trying the plugin root first and the data repo
+> second; do not assume one layout.
+
+
 Walk back through the largest past sessions (or explicit ones), reflect on each in its own
 sub-agent, put every proposed change through a critic that re-reads the **raw** transcript, then
 hand the surviving, consolidated set into the same per-finding approval / apply / commit pipeline
