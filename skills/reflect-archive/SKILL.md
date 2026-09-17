@@ -1,7 +1,7 @@
 ---
 name: reflect-archive
 description: >-
-  Batch-reflect over one or more PAST Claude Code sessions (largest first) and propose
+  Batch-reflect over one or more PAST agent sessions — Claude Code transcripts, Codex rollouts, or both (largest first) — and propose
   improvements to the user's Claude configuration, with an adversarial critic that re-reads
   the raw transcript to refute weak findings before they reach approval. Each surviving change
   is approved per-item; applied changes persist in ~/.claude/local-forks/ exactly like
@@ -84,7 +84,10 @@ Present the chosen list (size + uuid + agent) via `AskUserQuestion` and confirm 
 
 ### Step 2. Reflect per session (method Phase R)
 
-For each selected session, spawn **one** sub-agent (general-purpose), in parallel. Each agent's
+For each selected session, delegate to **one** sub-agent, in parallel, using whatever delegation the
+running agent provides (Claude Code: the `Agent` tool with `general-purpose`; Codex: its own sub-agent
+mechanism). An agent with no delegation runs the sessions one after another inline — the budget
+discipline below is why delegation is preferred, not a hard requirement. Each reflector's
 prompt instructs it to:
 
 1. Run `python3 ~/.claude/local-forks/_system/scripts/session-digest.py <raw-path> --out <scratch>/<uuid>.digest.txt`.
@@ -98,7 +101,8 @@ Collect each agent's findings keyed by session uuid. An empty result for a sessi
 
 ### Step 3. Critic per session (method Phase K)
 
-For each session that produced ≥1 finding, spawn **one** critic sub-agent (general-purpose). Give
+For each session that produced ≥1 finding, delegate **one** critic the same way (see the note on
+delegation above — the critic must be a separate context from the reflector, whatever the mechanism). Give
 it the session's findings **and the path to the raw `.jsonl`** (not the digest). Its prompt
 instructs it to follow `method.md` Phase K: grep each cited quote in the raw transcript, read the
 surrounding window for meaning-in-context, run a targeted raw sweep for missed friction/error
