@@ -110,6 +110,8 @@ Never auto-resolve. CLAUDE.md is load-bearing for the orchestrator — silent ov
 
 Find every directory matching `~/.claude/local-forks/<marketplace>/<plugin>/<kind>/<name>/` that contains an `*.intent.md` file. Skip `_system/` and `_meta/`.
 
+For kinds whose artefacts are single files (`agents`, `commands`, `scripts`, `hooks`) there is no `<name>/` subdirectory — fork files sit directly at `<marketplace>/<plugin>/<kind>/<file>`, with the intent log beside them as `<kind>/<name>.intent.md` (one log may cover several files in that kind, e.g. `scripts/scripts.intent.md`).
+
 For each fork build a tuple: `(marketplace, plugin, kind, name, baseline_upstream_version)` where `baseline_upstream_version` comes from `<plugin>/_meta.json` (canonical key — see `_system/_shared/meta-schema.md`).
 
 ### Step 3. Detect drift
@@ -133,6 +135,8 @@ If the work list is empty: report «all forks up to date», exit.
 | `intent.md` | `~/.claude/local-forks/<marketplace>/<plugin>/<kind>/<name>/<name>.intent.md` | yes |
 | `upstream.new.md` | `~/.claude/plugins/cache/<marketplace>/<plugin>/<installed-version>/<kind>/<name>/<file>` | yes |
 | `upstream.baseline.md` | same shape, at `<baseline-version>` | optional — if the old version directory has been cleaned up, skip it; the method treats it as a hint, not a source of truth |
+
+For file-kind forks (`agents`, `commands`, `scripts`, `hooks`) drop the `<name>/` segment from every path above: `our.md` is `<marketplace>/<plugin>/<kind>/<file>`, `intent.md` is `<kind>/<name>.intent.md` beside it, and `upstream.new.md` / `upstream.baseline.md` are `<cache>/<marketplace>/<plugin>/<version>/<kind>/<file>`. When one intent log covers several files, re-apply per file listed in its `Where:` line.
 
 If `upstream.new.md` is missing (artefact removed in the new upstream), drop into the special row in § Failure handling instead of running the method.
 
@@ -169,6 +173,8 @@ For each approved fork:
   - `## Conflicts (manual review)` section listing conflicts the user chose to keep flagged.
 - Update `<plugin>/_meta.json`: `baseline_upstream_version = <new-version>`, `last_synced_at = <UTC now>`.
 - Edit-in-place: copy `our.new.md` over `~/.claude/plugins/cache/<marketplace>/<plugin>/<new-version>/<kind>/<name>/<file>`.
+
+For file-kind forks (`agents`, `commands`, `scripts`, `hooks`) drop the `<name>/` segment in both paths above — `<kind>/<file>` and `<cache>/…/<kind>/<file>`. When the intent log covers several files, repeat both overwrite steps once per file listed in its `Where:` line.
 
 ### Step 7. Commit and push
 
