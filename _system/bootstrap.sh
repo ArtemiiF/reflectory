@@ -754,9 +754,9 @@ if [[ -f "${INSTALLED_JSON}" ]]; then
       dst="${plugin_cache_root}/${rel_within_plugin}"
       mkdir -p "$(dirname "${dst}")"
       backup_if_differs "${fork_file}" "${dst}"
-      cp "${fork_file}" "${dst}"
+      cp -p "${fork_file}" "${dst}"
       APPLIED+=("${plugin_name}/${rel_within_plugin}")
-    done < <(find "${plugin_dir}" -type f \( -name "*.md" -o -name "*.json" \) ! -name "_meta.json")
+    done < <(find "${plugin_dir}" -type f ! -name ".*" ! -name "_meta.json")
 
   done < <(find "${LOCAL_FORKS}" -mindepth 3 -maxdepth 3 -name "_meta.json" 2>/dev/null)
 fi

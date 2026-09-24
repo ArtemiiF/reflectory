@@ -58,10 +58,10 @@ is_system_dir() {
       kind="$(echo "${rel_intent}" | cut -d/ -f1)"
       name="$(basename "${intent_dir}")"
       # Skills are nested one extra level: skills/<name>/SKILL.intent.md.
-      # Agents/commands are flat: agents/<name>.intent.md (intent_dir == agents).
+      # Agents/commands/scripts/hooks are flat: <kind>/<name>.intent.md (intent_dir == <kind>).
       # Disambiguate by checking whether the intent file basename matches `<name>.intent.md`.
       intent_base="$(basename "${intent}" .intent.md)"
-      if [[ "${kind}" == "agents" || "${kind}" == "commands" ]]; then
+      if [[ "${kind}" == "agents" || "${kind}" == "commands" || "${kind}" == "scripts" || "${kind}" == "hooks" ]]; then
         name="${intent_base}"
       fi
 
