@@ -31,13 +31,8 @@ LOCAL_FORKS="${LOCAL_FORKS:-${HOME}/.claude/local-forks}"
 CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}"
 TRACKED="${LOCAL_FORKS}/_tracked"
 OUT="${CODEX_HOME}/AGENTS.md"
-
-# Layers, in the load order the thin ~/.claude/CLAUDE.md imports them.
-LAYERS=(
-  "${TRACKED}/general-rules.md"
-  "${TRACKED}/shared.md"
-  "${TRACKED}/machines/current/CLAUDE.md"
-)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REGISTRY="${TRACKED}/registry.json"
 
 DEFAULT_BUDGET=32768
 
@@ -57,12 +52,83 @@ if [[ "${mode}" != "write" && ${FORCE} -eq 1 ]]; then
   exit 2
 fi
 
-# Checked before anything else in write mode: complaining about the byte budget
-# on a machine that has no Codex at all points the reader at the wrong problem.
+# Checked before anything else in write mode (in particular, before the
+# plugin-resolution pass below): complaining about the byte budget, or about a
+# broken registry, on a machine that has no Codex at all points the reader at
+# the wrong problem. --check/--stdout have no equivalent early-out here — they
+# still need the resolved LAYERS below to compute the sha / print the body —
+# but a missing OUT file (or a request to just print) is handled where each
+# mode is applied further down, not here.
 if [[ "${mode}" == "write" && ! -d "${CODEX_HOME}" ]]; then
   echo "build-agents-md: ${CODEX_HOME} does not exist — no Codex on this machine." >&2
   echo "Nothing was written." >&2
   exit 1
+fi
+
+# Transition mode, by presence of _tracked/registry.json (schema:
+# _system/_shared/registry-schema.md):
+#   - absent  → legacy layers, unchanged from before the registry existed.
+#   - present → the new L1-L4 filenames, plus a plugin-resolution pass that
+#     appends every plugin registered for `codex` on this machine. A plugin
+#     import used to reach Codex only by riding along inside the machine file
+#     (`machines/<id>/CLAUDE.md:1`'s raw `@…/neuro-matrix/CLAUDE.md` line, in
+#     the old layout) — unconditionally, because that line had no per-agent
+#     axis. The registry's `agents` field is that axis: a plugin declared
+#     `agents: ["claude"]` no longer reaches Codex's projection at all.
+REGISTRY_MODE=0
+[[ -f "${REGISTRY}" ]] && REGISTRY_MODE=1
+
+if (( REGISTRY_MODE )); then
+  LAYERS=(
+    "${TRACKED}/L1-general.md"
+    "${TRACKED}/L2-culture.md"
+    "${TRACKED}/machines/current/role.md"
+    "${TRACKED}/machines/current/environment.md"
+    "${TRACKED}/machines/current/rules.md"
+    "${TRACKED}/machines/current/agents/codex.md"
+  )
+  # One resolved path per plugin registered for codex on this machine (schema:
+  # registry-schema.md "Resolution"). `skip` rows are not appended — they do
+  # not belong here. An `unknown` row (targeting matched but the plugin could
+  # not actually be located) is surfaced with a NOTE and also not appended —
+  # unlike bootstrap.sh's Claude-root writer, this script has no "leave the
+  # previous version alone" fallback of its own (every mode fully regenerates
+  # from LAYERS), so an `unknown` here can only be reported, not preserved
+  # around; inert today since no registry entry targets `codex` (per
+  # registry-schema.md), a live gap the day one does.
+  #
+  # The resolver's own exit status is captured explicitly (not read via
+  # `< <(...)`, which would discard it): a resolver failure that went
+  # unnoticed here would silently write a version missing every plugin —
+  # indistinguishable from "no plugin currently targets codex" (true today)
+  # until the day one does.
+  plugin_targets_file="$(mktemp)"
+  if ! "${SCRIPT_DIR}/skill-targets.sh" --kind plugin --for-agent codex > "${plugin_targets_file}"; then
+    echo "build-agents-md: plugin resolution failed (see the message above)." >&2
+    echo "Refusing to proceed with a projection that would silently drop every plugin." >&2
+    rm -f "${plugin_targets_file}"
+    exit 1
+  fi
+  while IFS=$'\t' read -r _name decision _agent path; do
+    [[ -n "${_name}" ]] || continue
+    case "${decision}" in
+      install)
+        [[ "${path}" != "-" ]] || continue
+        LAYERS+=("${path}")
+        ;;
+      unknown)
+        echo "build-agents-md: NOTE: plugin '${_name}' targets codex on this machine but did not resolve: ${path}" >&2
+        ;;
+    esac
+  done < "${plugin_targets_file}"
+  rm -f "${plugin_targets_file}"
+else
+  # Legacy layers, in the load order the thin ~/.claude/CLAUDE.md imports them.
+  LAYERS=(
+    "${TRACKED}/general-rules.md"
+    "${TRACKED}/shared.md"
+    "${TRACKED}/machines/current/CLAUDE.md"
+  )
 fi
 
 sha_of() {
@@ -94,9 +160,20 @@ if (( ${#missing[@]} > 0 )); then
   # reason to project a half-empty rule set.
   echo "build-agents-md: missing layer(s):" >&2
   for f in "${missing[@]}"; do echo "  ${f}" >&2; done
-  echo "The machine layer is not wired: _tracked/machines/current should point at" >&2
-  echo "this machine profile. Write the id to _meta/machine-id and re-run bootstrap.sh" >&2
-  echo "(inside bootstrap, that means this run had no profile to project)." >&2
+  if (( REGISTRY_MODE )); then
+    # In registry mode the missing file is as likely to be one of L1-general.md
+    # / L2-culture.md / machines/<id>/agents/codex.md — none of which the
+    # machines/current symlink or _meta/machine-id fixes by themselves — as it
+    # is an unwired machine profile. Naming only the symlink case here would
+    # point at the wrong problem for the other two.
+    echo "Either _tracked/machines/current is not wired to this machine's profile" >&2
+    echo "(write the id to _meta/machine-id and re-run bootstrap.sh), or one of the" >&2
+    echo "L1-L4 layer files listed above genuinely does not exist yet — create it." >&2
+  else
+    echo "The machine layer is not wired: _tracked/machines/current should point at" >&2
+    echo "this machine profile. Write the id to _meta/machine-id and re-run bootstrap.sh" >&2
+    echo "(inside bootstrap, that means this run had no profile to project)." >&2
+  fi
   exit 1
 fi
 

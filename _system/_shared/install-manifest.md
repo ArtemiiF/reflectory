@@ -50,3 +50,11 @@ commit over a directory the repo does not own is worse.
 - `_system/bootstrap.sh` — installs the resolved set.
 - `skills/pull-forks/SKILL.md` — same resolution when installing what arrived.
 - `_system/scripts/validate-manifests.sh` — schema gate, run from pre-commit.
+
+## Superseded by the registry, once a data repo migrates
+
+This schema stays authoritative for a data repo that has no `_tracked/registry.json`
+(transition mode — every reader above falls back to it exactly as described).
+A data repo that creates `registry.json` moves each skill's `machines`/`agents`
+pair into a `kind: "skill"` entry there instead — see `registry-schema.md`,
+which also covers the plugin roster this file never had a slot for.

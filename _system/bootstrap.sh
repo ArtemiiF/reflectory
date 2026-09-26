@@ -8,14 +8,23 @@
 #      + any other reference files) into ~/.claude/skills/<skill>/ so the system
 #      skills are fully invocable AND any edit through the live path flows back
 #      to the source of truth without a second copy to keep in sync. Only skills
-#      this machine and agent are targeted by are installed — resolved from
-#      skills/<name>/install.json by _system/scripts/skill-targets.sh (schema:
-#      _system/_shared/install-manifest.md). Pass --prune to also remove skills
-#      this repo installed earlier and no longer targets.
-#   2. Restore top-level ~/.claude/ files from _tracked/: CLAUDE.md and RTK.md
-#      are copied if the live file is missing (existing live file preserved —
-#      use /sync-upstream or manual reconciliation to merge); statusline.sh is
-#      symlinked instead so live edits flow back to source-of-truth.
+#      this machine and agent are targeted by are installed — resolved by
+#      _system/scripts/skill-targets.sh, either from a `kind: "skill"` entry in
+#      _tracked/registry.json (schema: _system/_shared/registry-schema.md) once
+#      the data repo has migrated, or from skills/<name>/install.json (schema:
+#      _system/_shared/install-manifest.md) on a data repo that has not.
+#      Pass --prune to also remove skills this repo installed earlier and no
+#      longer targets.
+#   1.8. Registry mode only (_tracked/registry.json exists): write the live
+#      ~/.claude/CLAUDE.md directly from the resolved L1-L4 layers plus every
+#      plugin registered for `claude` on this machine (see Step 1.8's own
+#      comment in the script body for why this bypasses _tracked/CLAUDE.md).
+#   2. Restore top-level ~/.claude/ files from _tracked/: in transition mode
+#      (no registry.json) CLAUDE.md and RTK.md are copied if the live file is
+#      missing (existing live file preserved — use /sync-upstream or manual
+#      reconciliation to merge); in registry mode, only RTK.md goes through
+#      this path (CLAUDE.md is Step 1.8's job). statusline.sh is symlinked
+#      instead so live edits flow back to source-of-truth.
 #   3. For every forked plugin artefact under <marketplace>/<plugin>/...:
 #        - read baseline_upstream_version from <plugin>/_meta.json
 #        - check ~/.claude/plugins/installed_plugins.json for the installed version
@@ -264,9 +273,12 @@ echo "==> Machinery root: ${MACHINERY_ROOT} (recorded in _meta/machinery-root)"
 # resolver directly (--machine), keeping one answer for "which machine is this"
 # instead of two implementations that can disagree. The fresh-clone abort itself
 # is fixed by the non-fatal resolver call below, not by this ordering.
-# The thin ~/.claude/CLAUDE.md imports @…/machines/current/CLAUDE.md; `current`
-# is a per-machine symlink (gitignored, see .gitignore) we set here. A relative
-# target keeps it self-contained inside machines/.
+# The thin ~/.claude/CLAUDE.md imports @…/machines/current/CLAUDE.md in
+# transition mode, or @…/machines/current/{role,environment,rules}.md (plus
+# an agents/claude.md and resolved plugins, via Step 1.8) once registry.json
+# exists; `current` is a per-machine symlink (gitignored, see .gitignore) we
+# set here either way. A relative target keeps it self-contained inside
+# machines/.
 MACHINES_DIR="${TRACKED_DIR}/machines"
 if [[ -d "${MACHINES_DIR}" ]]; then
   MACHINE_ID="$(detect_machine)"
@@ -284,7 +296,9 @@ fi
 echo "==> Installing system skills as symlinks into ${SKILLS_DIR}"
 
 # Which skills belong on this machine, for which agent, is resolved by
-# skill-targets.sh from skills/<name>/install.json (schema:
+# skill-targets.sh — from a `kind: "skill"` entry in _tracked/registry.json
+# (schema: _system/_shared/registry-schema.md) once the data repo has
+# migrated, otherwise from skills/<name>/install.json (schema:
 # _system/_shared/install-manifest.md). /pull-forks is told to call the same
 # resolver — prose, so it teaches rather than guarantees; this script is the
 # enforced half. A skill already present in SKILLS_DIR but no
@@ -519,15 +533,163 @@ for install_root in "${SKILLS_DIR}" "${CODEX_SKILLS_DIR}"; do
   done < <(find "${install_root}" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) 2>/dev/null)
 done
 
+mkdir -p "${LIVE_CLAUDE_DIR}"
+
+# Step 1.8 — registry mode only: write the live Claude root DIRECTLY (never
+# through _tracked/CLAUDE.md) from the resolved layer + plugin set for this
+# machine. Transition mode (no registry.json) is unaffected — Step 2 below
+# keeps using a hand-authored, git-tracked _tracked/CLAUDE.md, restored
+# exactly as before.
+#
+# Why not _tracked/CLAUDE.md: that file is git-tracked and shared across every
+# machine (only `_tracked/machines/current` is gitignored — the file itself is
+# not). A plugin's resolved import path is this machine's own filesystem
+# location (`installed_plugins.json`'s installPath, or a Codex plugin-cache
+# path) — committing it there would ship one machine's absolute paths to
+# every other machine that pulls, and the NEXT machine's bootstrap would only
+# get to react via Step 2's "live differs from tracked" NOTE, never actually
+# fixing it (that NOTE never overwrites a live file that already exists).
+# Writing straight to the live root sidesteps the sharing problem entirely —
+# the same reason Codex's generated AGENTS.md is never git-tracked either
+# (build-agents-md.sh). The safety net follows the same idea build-agents-md.sh
+# uses for AGENTS.md (there, a stamp anywhere in a bounded header window; here,
+# a narrower single-line version of it): a generated-by stamp on the file's
+# FIRST LINE ONLY gates overwriting — not grepped anywhere in the body, so a
+# hand-written file that happens to quote the stamp text elsewhere (in a rule
+# about this very mechanism, say) is not mistaken for one bootstrap wrote. A
+# hand-written live CLAUDE.md is never clobbered, and re-running bootstrap
+# safely refreshes a file it wrote before (a plugin may have moved to a new
+# cache path since).
+#
+# A migrated repo may still carry a LEFTOVER _tracked/CLAUDE.md from before it
+# migrated (this step does not delete it — deleting tracked, git-committed
+# content is a data-repo change, out of scope here). Step 2's restore call for
+# CLAUDE.md is therefore skipped entirely in registry mode: with registry.json
+# present, that leftover file must never reach the live root — one-time
+# legacy content with no stamp, permanently blocking this step's own refresh
+# on every future run once written.
+REGISTRY_FILE="${TRACKED_DIR}/registry.json"
+CLAUDE_ROOT_STAMP="GENERATED by reflectory bootstrap.sh from _tracked/registry.json"
+if [[ -f "${REGISTRY_FILE}" ]]; then
+  if (( MACHINE_PROFILE_OK )); then
+    claude_layers=(
+      "${TRACKED_DIR}/L1-general.md"
+      "${TRACKED_DIR}/L2-culture.md"
+      "${TRACKED_DIR}/machines/current/role.md"
+      "${TRACKED_DIR}/machines/current/environment.md"
+      "${TRACKED_DIR}/machines/current/rules.md"
+      "${TRACKED_DIR}/machines/current/agents/claude.md"
+    )
+    missing_base_layers=()
+    for f in "${claude_layers[@]}"; do
+      [[ -f "${f}" ]] || missing_base_layers+=("${f}")
+    done
+    if (( ${#missing_base_layers[@]} > 0 )); then
+      # Consistent with build-agents-md.sh, which hard-fails the same way for
+      # Codex's projection: a half-written machine profile is a setup error,
+      # not a reason to write a Claude root with a dangling @import in it
+      # (whether Claude Code silently ignores a missing import target, or
+      # surfaces it, is not something this repo has measured either way).
+      echo "==> NOTE: registry mode wants to write the Claude root, but these layer(s) are missing:"
+      for f in "${missing_base_layers[@]}"; do echo "      ${f}"; done
+      echo "    Claude root not (re)generated. Create the missing file(s) and re-run bootstrap.sh."
+    else
+      # One resolved path per plugin registered for `claude` on this machine
+      # (schema: registry-schema.md "Resolution"). An `unknown` row (targeting
+      # matched but the plugin could not actually be located — installed_
+      # plugins.json missing/malformed, an ambiguous match, or the resolver
+      # call itself failing) marks resolution incomplete: if a stamped root
+      # already exists, the write/refresh below is skipped rather than
+      # silently dropping an import that may have resolved fine on a
+      # previous run — same "never act on an unknown row" contract the
+      # schema doc states, applied to "never delete on it" as well.
+      resolve_failed=0
+      plugin_targets_file="$(mktemp)"
+      if "${SCRIPTS_DIR}/skill-targets.sh" --kind plugin --for-agent claude --machine "${MACHINE_ID}" \
+           > "${plugin_targets_file}"; then
+        while IFS=$'\t' read -r _pname _pdecision _pagent _ppath; do
+          [[ -n "${_pname}" ]] || continue
+          case "${_pdecision}" in
+            install)
+              [[ "${_ppath}" != "-" ]] || continue
+              claude_layers+=("${_ppath}")
+              ;;
+            unknown)
+              resolve_failed=1
+              echo "==> NOTE: plugin '${_pname}' targets claude on this machine but did not resolve: ${_ppath}"
+              ;;
+          esac
+        done < "${plugin_targets_file}"
+      else
+        resolve_failed=1
+        echo "==> NOTE: plugin resolution failed (see the skill-targets.sh error above, if any)."
+      fi
+      rm -f "${plugin_targets_file}"
+
+      # No `@RTK.md` line here, by design, not oversight: the presence of
+      # ~/.claude/RTK.md proves nothing about whether its import is wanted —
+      # one real data repo's machine profile documents a machine where the
+      # file is kept on disk on purpose ("рецепт держим на случай возврата")
+      # but the import was deliberately removed from the live root (RTK
+      # disabled, hook unregistered elsewhere). Auto-appending it here on
+      # file-existence alone would silently re-enable a decision the user
+      # turned off, on every machine that still happens to have the file. A
+      # machine that wants RTK back adds `@~/.claude/RTK.md` to its own
+      # `machines/<id>/agents/claude.md` (an ordinary L4 line, expanded like
+      # any other — Codex never sees it, since that file is claude-only).
+
+      claude_root_content="$(
+        echo "<!-- ${CLAUDE_ROOT_STAMP} —"
+        echo "     do not edit directly. Edit the layer files or registry.json, then"
+        echo "     re-run bootstrap.sh. This file is machine-local (never git-tracked) —"
+        echo "     see _system/bootstrap.sh Step 1.8 for why. -->"
+        for f in "${claude_layers[@]}"; do
+          echo "@${f}"
+        done
+      )"
+      live_claude_root="${LIVE_CLAUDE_DIR}/CLAUDE.md"
+      if [[ ! -e "${live_claude_root}" ]]; then
+        # Nothing to preserve — write what we have even if plugin resolution
+        # failed this run; a root with just the base layers beats no root.
+        printf '%s\n' "${claude_root_content}" > "${live_claude_root}"
+        echo "==> Wrote ${live_claude_root} (${#claude_layers[@]} import(s), registry mode)"
+      elif head -n1 "${live_claude_root}" 2>/dev/null | grep -qF -- "${CLAUDE_ROOT_STAMP}"; then
+        if (( resolve_failed )); then
+          # A stamped root already exists (presumably with a previously
+          # resolved plugin set). Refreshing it now, with plugin resolution
+          # broken, would silently drop every plugin import that used to
+          # work. Leave it alone until resolution succeeds again.
+          echo "==> NOTE: leaving the existing generated Claude root untouched (not refreshing while plugin resolution is broken)."
+        elif ! cmp -s <(printf '%s\n' "${claude_root_content}") "${live_claude_root}"; then
+          printf '%s\n' "${claude_root_content}" > "${live_claude_root}"
+          echo "==> Refreshed ${live_claude_root} (${#claude_layers[@]} import(s), registry mode)"
+        fi
+      else
+        echo "==> NOTE: ${live_claude_root} exists and was not written by bootstrap.sh."
+        echo "    Registry mode wants to manage it directly but will not overwrite a"
+        echo "    hand-written file. Back it up, remove it, and re-run bootstrap.sh to"
+        echo "    switch this machine to the registry-generated root."
+      fi
+    fi
+  else
+    echo "==> NOTE: registry.json present but machine profile unresolved — Claude root not (re)generated."
+  fi
+fi
+
 # Step 2 — restore tracked top-level files (CLAUDE.md and anything it @-imports)
 # alongside it in ~/.claude/. A file is restored only if the live copy is missing;
 # an existing live file is preserved (it may be a workspace-managed symlink or a
 # manually-edited copy — reconcile via /reflect-session / /sync-upstream).
 #
-# Why RTK.md is here: ~/.claude/CLAUDE.md ends with `@RTK.md`, an import that
-# resolves relative to CLAUDE.md's directory. Without the import target on disk
-# the live CLAUDE.md restores cleanly but the RTK block is silently dropped on
-# a fresh machine. Track both files together to keep cross-machine restore whole.
+# Why RTK.md is here: on a machine where the thin root's last line is
+# `@RTK.md` (an import that resolves relative to CLAUDE.md's directory — not
+# true of every machine; some have deliberately removed that line while
+# keeping RTK.md itself on disk, e.g. RTK disabled but not deleted), restoring
+# CLAUDE.md alone would leave that import target missing on a fresh machine,
+# silently dropping the RTK block. Track both files together so a machine
+# that DOES import it restores whole. This restore call runs regardless of
+# whether this particular machine's root references RTK.md at all — it is a
+# no-op (see the function body) when `_tracked/RTK.md` does not exist.
 restore_tracked_file() {
   local tracked="$1" live="$2" name="$3"
   [[ -f "${tracked}" ]] || return 0
@@ -540,9 +702,15 @@ restore_tracked_file() {
   fi
 }
 
-mkdir -p "${LIVE_CLAUDE_DIR}"
-restore_tracked_file "${TRACKED_DIR}/CLAUDE.md" "${LIVE_CLAUDE_DIR}/CLAUDE.md" "CLAUDE.md"
-restore_tracked_file "${TRACKED_DIR}/RTK.md"    "${LIVE_CLAUDE_DIR}/RTK.md"    "RTK.md"
+# CLAUDE.md is restored from _tracked/ only in transition mode: Step 1.8 above
+# owns the live root entirely once registry.json exists, and a leftover,
+# pre-migration _tracked/CLAUDE.md must never reach the live root once it
+# does (see Step 1.8's comment for why — that file would have no stamp and
+# would permanently block Step 1.8's own refresh from then on).
+if [[ ! -f "${REGISTRY_FILE}" ]]; then
+  restore_tracked_file "${TRACKED_DIR}/CLAUDE.md" "${LIVE_CLAUDE_DIR}/CLAUDE.md" "CLAUDE.md"
+fi
+restore_tracked_file "${TRACKED_DIR}/RTK.md" "${LIVE_CLAUDE_DIR}/RTK.md" "RTK.md"
 
 # statusline.sh is referenced by settings.json:statusLine.command as an absolute
 # ~/.claude/ path. Unlike CLAUDE.md/RTK.md it is symlinked (not copied), so live

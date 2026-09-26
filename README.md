@@ -40,9 +40,15 @@ personal rules, forked plugin skills, and session reflections. The core loop:
   through `@`-imports and Codex through a generated `AGENTS.md`; session
   transcripts from both are read by one parser, so a reflection run sees Codex
   sessions too.
-- **Skill targeting** — each skill declares which machines and which agents it
-  belongs on (`skills/<name>/install.json`), so a WSL-only skill stays off your
-  laptop and a Claude-specific one never ships into Codex.
+- **Skill and plugin targeting** — each skill declares which machines and which
+  agents it belongs on, and so does every marketplace plugin whose own rule
+  file should reach the assembled rule layer. Both live as entries in one
+  `_tracked/registry.json` (schema: `_system/_shared/registry-schema.md`); a
+  data repo that has not migrated keeps declaring skills one `install.json`
+  per skill instead (schema: `_system/_shared/install-manifest.md`) and has no
+  plugin roster at all — both are read by the same resolver. Either way, a
+  WSL-only skill stays off your laptop and a Claude-specific one never ships
+  into Codex.
 - **Deterministic gates** — a pre-commit hook validates rule frontmatter on every
   commit; scripts (not prose) rebuild the index, digest sessions, and compute
   rule-usage stats. The prose instructions are advisory; the hooks fire regardless.
@@ -51,9 +57,13 @@ personal rules, forked plugin skills, and session reflections. The core loop:
   moment they happen; the next `/reflect-session` consumes the queue, so corrections
   survive even from sessions you never reflected on. Registration is one manual
   settings.json step (see `_system/scripts/capture-corrections.py` header).
-- **Knowledge-class layering** — rules split into portable general discipline (G),
-  orchestrator discipline (K0), your idiolect (K1), and per-machine environment
-  maps (K2), so each machine loads exactly the layers that apply to it.
+- **Layered rules** — rules split into portable general discipline (L1), your
+  idiolect and personal-but-portable discipline (L2), per-machine identity and
+  environment (L3), and rules specific to one agent's plugins on one machine
+  (L4), so each machine (and each agent on it) loads exactly the layers that
+  apply. A data repo that has not migrated past the pre-registry layout keeps
+  the equivalent split under its old names (general discipline (G), orchestrator
+  discipline (K0), idiolect (K1), environment maps (K2)).
 - **Git-native persistence** — everything lives in one repo you own; approved
   changes are committed and pushed, so your config survives machine changes.
 
@@ -67,11 +77,12 @@ personal rules, forked plugin skills, and session reflections. The core loop:
 | `skills/sync-upstream/` | Re-apply your tracked skill forks after a plugin updates upstream |
 | `skills/pull-forks/` | Pull the data repo and install what arrived onto this machine (skills, hooks, tracked layers) |
 | `_system/scripts/` | Deterministic plumbing: frontmatter validation, index build, pre-commit gate, session digests |
-| `_system/scripts/skill-targets.sh` | Resolves which skills install on this machine, for which agent |
-| `_system/scripts/build-agents-md.sh` | Projects the tracked rule layers into Codex's `AGENTS.md` |
+| `_system/scripts/skill-targets.sh` | Resolves which skills — and, from a registry, which plugins — install/attach on this machine, for which agent |
+| `_system/scripts/build-agents-md.sh` | Projects the tracked rule layers (and, from a registry, the resolved plugin set) into Codex's `AGENTS.md` |
 | `_system/scripts/transcript_reader.py` | Translates Codex rollouts into Claude-shaped records — one parser for both |
-| `_system/_shared/` | Metadata schema and remote-init wizard used by the skills |
-| `_tracked/general-rules.md` | Starter set of universal agent-discipline rules (class G), harvested from real sessions |
+| `_system/_shared/` | Metadata schema, registry schema, and remote-init wizard used by the skills |
+| `_system/_shared/registry-schema.md` | Schema for `_tracked/registry.json` — the skill + plugin targeting registry |
+| `_tracked/general-rules.md` | Starter set of universal agent-discipline rules (class G, legacy layout), harvested from real sessions |
 | `_system/bootstrap.sh` | Installer: symlinks skills into `~/.claude/skills/`, wires the tracked layer |
 
 ## Install
@@ -153,6 +164,15 @@ starter rules, add to your `~/.claude/CLAUDE.md`:
 @local-forks/_tracked/general-rules.md
 ```
 
+This manual step is for a data repo without `_tracked/registry.json` (either
+option above starts you there). Once your data repo migrates to a registry
+(a data-repo change, not part of this engine — see the Registry section
+below), stop hand-editing `~/.claude/CLAUDE.md` entirely: `bootstrap.sh`
+writes and refreshes it directly from then on. Remove any hand-written
+`~/.claude/CLAUDE.md` before that first registry-mode `bootstrap.sh` run —
+bootstrap.sh never overwrites a file lacking its own stamp, so a leftover
+hand-written root would otherwise sit there unmanaged.
+
 ## Daily use
 
 - `/reflect-session` — end of a meaty session: harvest improvements from it.
@@ -197,16 +217,63 @@ not overwrite an `AGENTS.md` that lacks its own stamp: that is your hand-written
 file, the same class as `~/.claude/CLAUDE.md` (`--force` overwrites, after a
 timestamped backup).
 
+### Registry
+
+A data repo with `_tracked/registry.json` declares two kinds of entry, each
+with the same two axes — `machines` and `agents`:
+
+```json
+{ "entries": [
+    { "name": "reflect-session", "kind": "skill", "layer": "root",
+      "machines": ["all"], "agents": ["claude", "codex"] },
+    { "name": "neuro-matrix", "kind": "plugin", "layer": "agent",
+      "machines": ["mbp-filanovskii"], "agents": ["claude"],
+      "import": "CLAUDE.md" }
+] }
+```
+
+`kind: "skill"` entries replace the per-skill `install.json`; `kind: "plugin"`
+entries are new — the plugin roster this repo did not have before. A plugin
+entry's `import` (a file inside the plugin's own install directory, e.g. its
+`CLAUDE.md`) is attached to the assembled rule layer only for the agents and
+machines listed — never both agents unconditionally the way a hand-written
+`@import` line inside a machine file used to. Where the plugin actually lives
+on disk is never typed by hand: `skill-targets.sh` reads it from the agent's
+own plugin-manager state (`installed_plugins.json` for Claude, the plugin
+cache tree for Codex) — schema and full resolution rules in
+`_system/_shared/registry-schema.md`.
+
+**The live Claude root, once migrated.** With `_tracked/registry.json`
+present, `bootstrap.sh` writes `~/.claude/CLAUDE.md` directly — the L1-L4
+layers plus every plugin resolved for `claude` on this machine — and
+refreshes it on later runs (a stamp in the file's first line marks it as
+bootstrap's own; a hand-written root is never touched). `_tracked/CLAUDE.md`
+plays no part here: a plugin's resolved path is this machine's own
+filesystem location, and that file is git-tracked and shared across every
+machine, so nothing machine-specific is ever written there. If this machine
+already has a hand-written `~/.claude/CLAUDE.md` from before migrating, back
+it up and remove it once, then run `bootstrap.sh` to switch to the generated
+root.
+
+**Transition mode.** A data repo with no `_tracked/registry.json` is
+unaffected by any of this — `bootstrap.sh`, `build-agents-md.sh`,
+`skill-targets.sh` and `validate-manifests.sh` all fall back to exactly the
+pre-registry behaviour: per-skill `install.json`, no plugin roster, the
+`general-rules.md` / `shared.md` / `machines/current/CLAUDE.md` layer names.
+Nothing here is a breaking change until a data repo creates `registry.json`.
+
 ### Skills
 
-A skill declares its two axes beside `SKILL.md`:
+A skill declares its two axes either as a `kind: "skill"` entry in
+`_tracked/registry.json` (above) or, in a data repo that has not migrated,
+beside its own `SKILL.md`:
 
 ```json
 { "machines": ["home-wsl"], "agents": ["claude", "codex"] }
 ```
 
 `machines` is `["all"]` or ids from `_tracked/machines/<id>/`; `agents` is any
-subset of `claude`, `codex`. No manifest means `machines: ["all"]`,
+subset of `claude`, `codex`. No entry/manifest means `machines: ["all"]`,
 `agents: ["claude"]` — a skill written for Claude Code never ships into Codex by
 accident. `bootstrap.sh` installs into `~/.claude/skills/` and
 `$CODEX_HOME/skills/` accordingly, reports what it did not install, and removes
@@ -245,9 +312,15 @@ encrypted.
 ## Layout conventions
 
 - `_system/` — skills and machinery (symlinked into `~/.claude/skills/` by bootstrap).
-- `_tracked/` — files mirrored into `~/.claude/` (rule layers imported by your CLAUDE.md).
-- `_tracked/machines/<id>/` — optional per-machine layers; `machines/current` is a
-  gitignored symlink set by bootstrap via `_meta/machine-id`.
+- `_tracked/` — rule layers your CLAUDE.md `@import`s: `L1-general.md`,
+  `L2-culture.md` (or the legacy `general-rules.md` / `shared.md` on a repo
+  that has not migrated), plus, once migrated, `registry.json` — the skill +
+  plugin targeting registry, read by `bootstrap.sh`/`build-agents-md.sh`, not
+  itself mirrored or imported anywhere.
+- `_tracked/machines/<id>/` — per-machine layers: `role.md`, `environment.md`,
+  `rules.md` + `k2-environment.md`, `agents/<agent>.md` — or the legacy single
+  `CLAUDE.md` per machine. `machines/current` is a gitignored symlink set by
+  bootstrap via `_meta/machine-id`.
 - `_sessions/` — reflection reports produced by the skills (yours will accumulate here).
 - `_meta/` — per-repo metadata (remote config, machine id override).
 

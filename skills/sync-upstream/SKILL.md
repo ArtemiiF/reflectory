@@ -89,7 +89,21 @@ If fast-forward fails (the user edited on another machine and pushed) — stop a
 
 ### Step 1a. CLAUDE.md drift detection
 
-After a successful pull, compare the live global CLAUDE.md against the tracked mirror:
+**Skip this step entirely if `~/.claude/local-forks/_tracked/registry.json` exists.**
+On a migrated repo, `_tracked/CLAUDE.md` is not the live root's source —
+`bootstrap.sh` Step 1.8 writes the live root directly from the registry and
+never reads `_tracked/CLAUDE.md`. `cmp` would report a difference on every
+run there regardless (or fail outright if `_tracked/CLAUDE.md` doesn't exist
+at all, which it may not on a migrated repo), and both non-`Keep`/`Abort`
+options actively cause damage: "Import live → tracked" would commit this
+machine's resolved, machine-specific plugin paths into the shared
+`_tracked/CLAUDE.md` — exactly what `bootstrap.sh` Step 1.8 exists to never
+do — and "Restore tracked → live" would overwrite the generated root with
+unstamped legacy content, permanently blocking Step 1.8's own refresh from
+then on (same failure mode `/pull-forks` Step 3 guards against for the same
+reason).
+
+Otherwise, after a successful pull, compare the live global CLAUDE.md against the tracked mirror:
 
 ```
 cmp -s ~/.claude/CLAUDE.md ~/.claude/local-forks/_tracked/CLAUDE.md

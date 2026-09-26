@@ -1,6 +1,6 @@
 {
   "name": "reflectory",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Turn the friction in your sessions into rules that persist. Works with Codex and Claude Code, sharing one rule layer and one personal git repo.",
   "author": {
     "name": "Artemii Filanovskii",

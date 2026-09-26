@@ -119,5 +119,5 @@ Applied vs skipped vs discarded; net line-count delta of the rule layer («−41
 |---|---|
 | Pre-flight not READY | Stop, hand off to the init wizard. |
 | `rule-stats.py --dormancy` empty (no history yet) | Phase D legitimately yields nothing — proceed with X/C/M/V only. |
-| Legacy mirror setup: live `~/.claude/CLAUDE.md` duplicates `_tracked/CLAUDE.md` and they differ before the run | Surface the drift and stop — reconcile first (manual or /reflect-session), compressing a forked pair doubles the divergence. |
+| Legacy mirror setup (no `_tracked/registry.json`): live `~/.claude/CLAUDE.md` duplicates `_tracked/CLAUDE.md` and they differ before the run | Surface the drift and stop — reconcile first (manual or /reflect-session), compressing a forked pair doubles the divergence. Does not apply once `_tracked/registry.json` exists — `bootstrap.sh` owns the live root directly then, and any `_tracked/CLAUDE.md` still present is an unrelated leftover, not a mirror to reconcile. |
 | Push fails after one retry | Local commit stays; surface the error and the manual push command. |

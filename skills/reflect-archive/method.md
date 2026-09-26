@@ -61,7 +61,7 @@ Each finding the reflector returns MUST carry, verbatim from the base method:
 - `evidence` — the exact quote (Cluster A) or transcript span (Clusters B/C), with an event
   pointer (`[E00123]`) into the digest.
 - `cluster` — the signal id (A1…A8, B1…B13, C1…C6, D1…D2).
-- `category` — A / B / C, and for A the scope/class (G / K1 / K2 / K0) per Phase 3.
+- `category` — A / B / C, and for A the layer (L1 / L2 / L3 / L4, or the legacy G / K1 / K2 / K0 vocabulary on a data repo that has not migrated) per Phase 3.
 - `draft` — the concrete rule text / diff / skill skeleton (Phase 4).
 - `self_test` — which of the four Phase-5 checks passed.
 
