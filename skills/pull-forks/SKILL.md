@@ -95,12 +95,13 @@ git -C ~/.claude/local-forks diff --name-status ORIG_HEAD..HEAD
 
 | Path pattern | Class | Local action |
 |---|---|---|
-| `_tracked/CLAUDE.md` | tracked mirror | Step 3 — live-vs-tracked check |
-| `_tracked/*.md` (shared, general-rules, k0/k2 layers) | @-imported layer | Claude Code: none — live immediately via CLAUDE.md `@`-imports; just verify the import line exists. Codex present on this machine: re-project (Step 4b) |
-| `_tracked/machines/<id>/**` | other machine's layer | skip unless `<id>` == this machine's `_meta/machine-id` (or `machines/current` symlink target) |
+| `_tracked/CLAUDE.md` | hand-authored tracked mirror — only meaningful on a data repo that has not migrated (a migrated repo's live root is a generated, machine-local file `bootstrap.sh` manages directly, never written to `_tracked/`) | Step 3 — live-vs-tracked check |
+| `_tracked/*.md` (L1/L2 layers, or the legacy general-rules/shared/k0-discipline names) | @-imported layer | Claude Code: none — live immediately via CLAUDE.md `@`-imports; just verify the import line exists. Codex present on this machine: re-project (Step 4b) |
+| `_tracked/machines/<id>/**` | other machine's layer (L3/L4, or the legacy per-machine `CLAUDE.md`) | skip unless `<id>` == this machine's `_meta/machine-id` (or `machines/current` symlink target) |
+| `_tracked/registry.json` | plugin + skill targeting registry | Step 4 — re-resolve which skills belong here. Codex's `AGENTS.md` picks up a changed plugin entry automatically via Step 4b below (it re-projects after any pull that touched `_tracked/`, registry.json included). The Claude root does not: re-run `bootstrap.sh` after a pull that changed this file to pick up a new/changed plugin entry there |
 | `_tracked/hooks/*` | hook script | Step 5 — hook wiring |
 | `skills/<name>/SKILL.md`, `*.md` | skill | Step 4 — skill install |
-| `skills/<name>/install.json` | skill targeting manifest | Step 4 — re-resolve; may add or drop a skill on this machine |
+| `skills/<name>/install.json` | skill targeting manifest (legacy layout — superseded by `_tracked/registry.json` once the data repo migrates) | Step 4 — re-resolve; may add or drop a skill on this machine |
 | `_system/**` | machinery — only present in a full-clone layout | none: under a plugin install the scripts arrive with `claude plugin update`, not through this repo |
 | `_sessions/**`, `_meta/**`, `INDEX.md` | reports / metadata | none |
 
@@ -108,7 +109,20 @@ Empty install list → report «pulled N commits, nothing needs machine-local wi
 
 ### Step 3. Tracked CLAUDE.md check
 
-If the pull changed `_tracked/CLAUDE.md`:
+**Skip this step entirely if `~/.claude/local-forks/_tracked/registry.json` exists.**
+On a migrated repo, `_tracked/CLAUDE.md` is not the live root's source — `bootstrap.sh`
+Step 1.8 writes the live root directly from the registry and never reads
+`_tracked/CLAUDE.md`. Running this check there would offer "Update live from
+tracked" against a leftover, pre-migration file with no stamp; taking that
+option would overwrite the registry-generated root with stale content and
+permanently block bootstrap's own refresh (no stamp on it afterward). If the
+pull brought `_tracked/CLAUDE.md` on a migrated repo, that file is orphaned
+dead weight, not drift to reconcile — mention it in the Step 6 report as an
+unused leftover for the user to delete by hand; do not run the drift check
+against it, and do not assume `/reflect-compress` has a procedure for it
+(it doesn't — this is a data-repo migration leftover, not a rule to prune).
+
+Otherwise, if the pull changed `_tracked/CLAUDE.md`:
 
 ```
 cmp -s ~/.claude/CLAUDE.md ~/.claude/local-forks/_tracked/CLAUDE.md
@@ -121,9 +135,12 @@ CLAUDE.md silently — it is load-bearing for every session.
 ### Step 4. Skill install
 
 **Resolve the target set first — do not install every skill in the repo.** Two
-axes decide it: machine and agent, declared per skill in `skills/<name>/install.json`
-(schema: `_system/_shared/install-manifest.md`). One resolver serves both this
-skill and `bootstrap.sh`, so the two installers cannot drift:
+axes decide it: machine and agent, declared per skill either in
+`_tracked/registry.json` (schema: `_system/_shared/registry-schema.md`, once
+the data repo has migrated) or in `skills/<name>/install.json` (schema:
+`_system/_shared/install-manifest.md`, legacy layout — whichever is present).
+One resolver serves both this skill and `bootstrap.sh`, so the two installers
+cannot drift:
 
 ```
 ${R}/_system/scripts/skill-targets.sh

@@ -59,7 +59,16 @@ FM_COUNTER = re.compile(
 )
 FM_TOPIC = re.compile(r"^session_topic:\s*(.+)$")
 FINDING_HDR = re.compile(r"^## Finding \d+ \((applied|skipped|discarded)\) — (.+)$")
-CLASS_FIELD = re.compile(r"^\*\*Class:\*\*\s*(G|K[012])")
+# Two class vocabularies, both accepted so old and new session logs parse with
+# the same script during the transition: legacy G/K0/K1/K2 (pre-registry data
+# repos keep writing these — rule text is unchanged, only the layer files
+# moved), and the new L1-L4 (L3 alone optionally suffixed a/b/c for its role/
+# environment/rules split, e.g. `L3a`, `L3b`, `L3c`; L1/L2/L4 have no split).
+# No end-anchor on the group, matching every other token in this regex
+# (`G`, `K0`) — so a mistakenly-suffixed `L1a` or `L4b` still matches as `L1`
+# / `L4` (the trailing letter is simply not part of the captured group) rather
+# than failing to parse; this is a lenient degrade, not a rejection.
+CLASS_FIELD = re.compile(r"^\*\*Class:\*\*\s*(G|K[012]|L[124]|L3[abc]?)")
 
 
 def norm_key(label: str) -> str:

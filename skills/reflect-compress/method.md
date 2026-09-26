@@ -25,7 +25,7 @@ Deleting/demoting here is what reflect-session's 2-per-run cap cannot do; the pe
 
 ## Phase C — Contradictions
 
-For each pair of rules in the same knowledge class (G / K0 / K1 / K2), compare Trigger and Action/Don't:
+For each pair of rules in the same layer (L1 / L2 / L3 / L4, or the legacy G / K0 / K1 / K2 vocabulary on a data repo that has not migrated), compare Trigger and Action/Don't:
 
 - Overlapping trigger, incompatible actions → finding: quote both rules, propose the resolution — merge with an explicit precedence clause, narrow one trigger, or delete the superseded rule (prefer keeping the one with the more recent evidence/Reason line).
 - A rule contradicting a hard structural fact of the repo/environment (checkable now — check it) → finding: repair or delete.

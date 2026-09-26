@@ -14,7 +14,7 @@ Every applied A-finding grows the always-on global CLAUDE.md; a rule whose trigg
    python3 "${R}"/_system/scripts/rule-stats.py --dormancy
    ```
    It emits one `key<TAB>N<TAB>label` line per audited rule, sorted by N desc. **N is computed from the full history** (length of the trailing run of `dormant` marks for that rule's stable id / normalised label), NOT carried forward from the previous log. A single missing `## Decay check` section therefore no longer resets the count — this is what keeps the prune channel alive (the add channel runs every session; the counter must not silently reset under it).
-2. **Exclusion:** rules already demoted to lazy reference files (e.g. `k0-discipline.md` — the body carries a `**Demoted:**` line) are excluded from the dormancy audit and from future `## Decay check` sections — demotion is the terminal decay state; expected-dormant is not a signal.
+2. **Exclusion:** rules already demoted to lazy reference files (e.g. `L1-lazy.md` on a migrated repo, `k0-discipline.md` on one still on the pre-registry layout — either way, the body carries a `**Demoted:**` line) are excluded from the dormancy audit and from future `## Decay check` sections — demotion is the terminal decay state; expected-dormant is not a signal.
 3. For each rule applied **≥3 reflect-runs ago**, check against the current session source:
    - Did its trigger condition occur this session?
    - If yes — did the rule hold (the mistake it encodes did not happen)?
@@ -49,7 +49,7 @@ A second input feeds Cluster A: the corrections queue (`_local/corrections-queue
 | A5 | **Decision reversal** | The agent proposed A, user pushed back, ended at B — and B was discoverable from prior turns |
 | A6 | **Explicit «remember» / preference** | User says «remember:», «всегда делай», «никогда», «по умолчанию» — highest-confidence rule candidate |
 | A7 | **Positive validation of a non-obvious choice** | User explicitly approves an unusual decision («да, именно так и надо», «то что нужно», «отлично») — captures a validated judgment call, prevents the agent from second-guessing it next time |
-| A8 | **Idiolect gap** | Agent interpreted a user phrase as X; a later turn shows the user meant Y (reversal, re-explanation, «я имел в виду», «нет, я про…»). Distinct from A1: friction is the symptom, A8 captures the reusable mapping «phrase → intent» so the same phrase is read correctly next session. Highest-value signal for the mutual-understanding goal (VISION.md, K1) |
+| A8 | **Idiolect gap** | Agent interpreted a user phrase as X; a later turn shows the user meant Y (reversal, re-explanation, «я имел в виду», «нет, я про…»). Distinct from A1: friction is the symptom, A8 captures the reusable mapping «phrase → intent» so the same phrase is read correctly next session. Highest-value signal for the mutual-understanding goal (VISION.md's «профиль взаимопонимания» concept — К1 there, L2 in the target model) |
 
 ### Cluster B — Agent-side signals (transcript shows thrashing, no user correction)
 
@@ -167,31 +167,105 @@ Once an observation lands in Category A, decide where it goes:
 
 **Otherwise pick A1.** When in doubt → A1 is the safer default (the global file always applies; a workspace-only rule may never fire if you switch contexts).
 
-### Category A scope — общее (G) vs личное (then K-class)
+### Category A layer — L1 (общее) через L4 (agent × machine)
 
-Every Category A finding is first split by **scope** (VISION.md «Ось общие/личные»), then — if personal — by knowledge-class.
+**Before applying this table, check whether the data repo has migrated**
+(`~/.claude/local-forks/_tracked/registry.json` exists?). This section is the
+target layout, for a migrated repo. An unmigrated repo has no L1-L4 files at
+all — skip straight to "Transition mode" below instead.
+
+Every Category A finding is placed in exactly one of four layers. The split
+runs scope-first (VISION.md «Ось общие/личные»): is it general, or tied to
+this setup? — then, only for the tied-to-this-setup branch, three further
+questions narrow it to L2, L3, or L4.
+
+| Tag | Layer | Covers | Target file |
+|---|---|---|---|
+| **L1** | General | Universal orchestrator discipline — how Claude should work in principle, no reference to this user, their environment, paths, projects, or idiolect (e.g. algorithm-diagnosis gate, evidence-based-medicine protocol, staged-diff check before commit) | `_tracked/L1-general.md` (always-on, `@import`-ed / concatenated); an L1 rule demoted by Phase 0's forced-decay finding (step 5 above) → `_tracked/L1-lazy.md` (read on trigger, not eagerly concatenated) |
+| **L2** | Culture | This user's idiolect — lexicon mappings (phrase → intent, typical source A8), format preferences (A6, A7, C1), input-pattern markers («именно» = verbatim) — plus personal orchestrator discipline that travels with the USER regardless of machine (e.g. what «сам всё сделай» means, «plan before first mutation») | `_tracked/L2-culture.md` |
+| **L3** | Machine | This machine's identity/role, environment/tooling, and recipes or access bound to it (git profile, OS/shell/tool inventory, vault access, environment quirks, command recipes that survived trial-and-error (B1), resolved anchors (B13)) | `_tracked/machines/<id>/role.md` (L3a — identity/git profile), `_tracked/machines/<id>/environment.md` (L3b — OS/shell/tool inventory), `_tracked/machines/<id>/rules.md` (L3c — index row) + `_tracked/machines/<id>/k2-environment.md` (L3c detail body, lazy) |
+| **L4** | Agent × machine | Rules whose content depends on which PLUGIN or tool a specific agent has installed on this specific machine — a plugin's own tool restrictions, which hook-gate variant is installed, a subagent-routing table that only applies with that plugin present. Recognition heuristic: the rule would misfire or not apply at all on a machine/agent pair that lacks the plugin it names | `_tracked/machines/<id>/agents/<agent>.md` |
 
 **Step 1 — scope.** Ask the load-bearing question: *would this rule fire for a different user on a different machine, with no edits?*
 
-- **Yes → общее (G).** Universal orchestrator discipline — how Claude should work in principle, no reference to this user, their environment, paths, projects, or idiolect (e.g. algorithm-diagnosis gate, evidence-based-medicine protocol, staged-diff check before commit, «record project conventions in the project's own CLAUDE.md»). Tag **G**, id-prefix `g-`, lands in `~/.claude/local-forks/_tracked/general-rules.md` (portable, `@import`-ed into CLAUDE.md). When in doubt → NOT G (keep the shared file clean; a mis-filed personal rule leaks this user's context into a portable artefact).
+- **Yes → L1.** Tag **L1**, id-prefix `l1-`, lands in `_tracked/L1-general.md` (portable, `@import`-ed into CLAUDE.md / concatenated into AGENTS.md). When in doubt → NOT L1 (keep the shared file clean; a mis-filed personal rule leaks this user's context into a portable artefact).
+- **No → continue to Step 2.**
+
+**Step 2 — is it about how THIS agent behaves given a specific plugin or hook it has installed, on a specific machine?** (e.g. «critic has no Bash, feed it a diff file», «this machine's auto-critic hook wants a marker before commit», «route to a subagent by this plugin's own table, not a flat scan»).
+
+- **Yes → L4.** Tag **L4**, id-prefix `l4-`, lands in `_tracked/machines/<id>/agents/<agent>.md` — write through `machines/current/agents/<agent>.md` (see the `current` note below).
+- **No → continue to Step 3.**
+
+**Step 3 — is it about THIS machine's environment, access, or identity** (which tools/paths exist here, who owns this machine, an access grant only this machine has, an environment quirk/recipe) **regardless of which agent or plugin is running?**
+
+- **Yes → L3.** Tag **L3**, id-prefix `l3-`. Sub-file by content: identity/git-profile → `role.md`; OS/shell/tool inventory → `environment.md`; everything else (access rules, recipes) → an index row in `rules.md` **plus** the full body in `k2-environment.md` (index/detail split — both writes are one approval, fail one, roll back the other). Write through `machines/current/...` (see the `current` note below).
+- **No → Step 4.**
+
+**Step 4 — otherwise it is this user's idiolect, phrasing, or personal-but-portable discipline** → **L2**, id-prefix `l2-`, lands in `_tracked/L2-culture.md`.
+
+The scope+layer travels into the session log (`**Class:**` field, one of
+`L1 / L2 / L3 / L4`, with `L3a`/`L3b`/`L3c` when the sub-file matters) and
+decides the target file per the table above. Раскладка A1 («оглавление»):
+живой `~/.claude/CLAUDE.md` — тонкий, он лишь `@import`-ит файлы ниже, поэтому
+**отдельного зеркалирования в `_tracked/CLAUDE.md` больше нет** — правка
+слой-файла видна со следующей сессии напрямую (registry-driven root — see
+`_system/_shared/registry-schema.md` — regenerates this import chain; a
+setup still on the pre-registry layout keeps the legacy `general-rules.md` /
+`shared.md` / `machines/current/CLAUDE.md` files instead, unchanged).
+
+`machines/current` — симлинк на профиль активной машины (наводит
+`bootstrap.sh` по детекции). L3 и L4 писать **только через `current/`** —
+тогда правило ложится в профиль той машины, где поймано, и не утекает на
+другие. Если профиля текущей машины ещё нет (`current` не наведён) — сначала
+завести `machines/<id>/` и `_meta/machine-id`, затем писать.
+
+**Existing ids are never renamed.** A rule migrated from the pre-L1-L4 layout
+keeps its original `g-` / `k1-` / `k2-` / `k0-` id — only its file and
+`**Class:**` tag change (decay history survives on the id, per Phase 0). The
+`l1-` / `l2-` / `l3-` / `l4-` prefixes above apply only to rules created from
+this point forward.
+
+### Transition mode — data repo without `_tracked/registry.json`
+
+The four-layer table above is the target layout. **Before acting on any
+Category A finding, check whether the data repo has actually migrated**:
+does `~/.claude/local-forks/_tracked/registry.json` exist? Most setups have
+not migrated yet — for those, the L1-L4 file names above do not exist and
+writing into them is a defect (the rule would silently never load: nothing
+`@import`s or concatenates a file the pre-migration root doesn't know about).
+On an unmigrated repo, route by the OLD scope+class instead, into the OLD
+files, using the OLD id-prefixes (unchanged — do not invent `l1-`/`l2-`/etc.
+ids on an unmigrated repo either):
+
+**Step 1 — scope**, same load-bearing question: *would this rule fire for a
+different user on a different machine, with no edits?*
+
+- **Yes → общее (G).** Universal orchestrator discipline — how Claude should
+  work in principle, no reference to this user, their environment, paths,
+  projects, or idiolect. Tag **G**, id-prefix `g-`, lands in
+  `_tracked/general-rules.md`. **When in doubt → NOT G** (keep the shared
+  file clean; a mis-filed personal rule leaks this user's context into a
+  portable artefact).
 - **No → личное.** Tied to this setup. Continue to Step 2.
 
 **Step 2 — knowledge-class (personal findings only):**
 
-| Tag | Class | Covers |
-|---|---|---|
-| **K1** | Mutual-understanding profile | lexicon mappings (phrase → intent, typical source A8), format preferences (A6, A7, C1), input-pattern markers («именно» = verbatim) |
-| **K2** | Environment map | command recipes that survived trial-and-error (B1), tool quirks (WSL / NTFS / rtk-class), resolved anchors (B13) |
-| **K0** | Personal orchestrator discipline | agent-behaviour rules tied to this user's projects / config / tooling (e.g. Ren'Py validation gate, auto-memory↔CLAUDE.md mirror) — discipline that is NOT portable |
+| Tag | Class | Covers | Target |
+|---|---|---|---|
+| **K1** | Mutual-understanding profile | idiolect, format preferences, input-pattern markers — the L2 content above | `_tracked/shared.md`, section «Профиль взаимопонимания (К1)» |
+| **K0** | Personal orchestrator discipline | portable-for-this-user discipline (→ the L2 content above) if not tied to one machine or project; machine-, project-, or plugin-bound discipline (→ the L3/L4 content above) if it is (e.g. a Ren'Py validation gate scoped to one project, dispatch discipline that only applies with a specific plugin installed) | portable → `_tracked/shared.md`, section «Дисциплина оркестратора (К0)»; machine/project/plugin-bound → `_tracked/machines/current/CLAUDE.md`, section К0 |
+| **K2** | Environment map | this machine's tools/access/recipes — the L3 content above | index row in `_tracked/machines/current/CLAUDE.md`'s «Карта среды (К2) — индекс» table, full body in `_tracked/machines/current/k2-environment.md` |
 
-The scope+class travels into the session log (`**Class:**` field, one of `G / K1 / K2 / K0`) and decides the target **layer file**. Раскладка A1 («оглавление»): живой `~/.claude/CLAUDE.md` — тонкий, он лишь `@import`-ит файлы ниже, поэтому **отдельного зеркалирования в `_tracked/CLAUDE.md` больше нет** — правка слой-файла видна со следующей сессии напрямую.
+A K0 finding that would be L4 under the target model (plugin- or
+hook-variant-specific, e.g. "critic has no Bash", "this machine's
+auto-critic hook wants a marker") still has no dedicated file on an
+unmigrated repo — file it as machine-bound K0 in
+`_tracked/machines/current/CLAUDE.md` §К0, same as any other machine-bound
+K0 rule, and note in the finding that it is L4-shaped for when the repo
+migrates.
 
-- **G** → `_tracked/general-rules.md` (портируемо на любую установку).
-- **K1** → `_tracked/shared.md`, секция «Профиль взаимопонимания (К1)».
-- **K0** → если правило портируемо для этого юзера и **не привязано к машине/проекту** → `_tracked/shared.md`, секция «Дисциплина оркестратора (К0)»; если **машинно/проектно-специфично** (Ren'Py-гейт, дисциплина под конкретную машину) → `_tracked/machines/current/CLAUDE.md`, секция К0.
-- **K2** → `_tracked/machines/current/CLAUDE.md`: индекс-строка в таблице «Карта среды (К2)»; полный рецепт — в `_tracked/machines/current/k2-environment.md` (reference-файл текущей машины).
-
-`machines/current` — симлинк на профиль активной машины (наводит `bootstrap.sh` по детекции). K2 и машинный K0 писать **только через `current/`** — тогда правило ложится в профиль той машины, где поймано, и не утекает на другие. Если профиля текущей машины ещё нет (`current` не наведён) — сначала завести `machines/<id>/` и `_meta/machine-id`, затем писать.
+`machines/current` — same symlink meaning as in the target model. Write K2
+and machine-bound K0 **only through `current/`**.
 
 Avoidance rules:
 - If a one-line CLAUDE.md rule (A) would fix the same incident as a plugin fork (B) — pick A. Forks are more expensive to maintain.
@@ -204,10 +278,10 @@ For each chosen observation, draft a concrete artefact.
 
 **Category A — CLAUDE.md rule.**
 
-**Assign a stable rule-id.** Every new A-rule gets a kebab-case id at creation, prefixed by its scope/class — `g-evidence-medicine` (general), `k1-implicit-revert`, `k2-rsync-ntfs`, `k0-renpy-validation-gate`. The id is written once as an HTML comment directly under the rule's `###` header in its target file (`general-rules.md` for G, CLAUDE.md for K1/K0, `k2-environment.md` for K2) and never changed afterwards (the header text may be reworded; the id may not):
+**Assign a stable rule-id.** On a migrated repo, every new A-rule gets a kebab-case id at creation, prefixed by its layer — `l1-evidence-medicine` (general), `l2-implicit-revert`, `l3-rsync-ntfs`, `l4-critic-no-bash` (a rule that only applies because this agent has a specific plugin installed here — e.g. neuro-matrix's critic having no Bash tool). On an unmigrated repo, keep the old `g-`/`k1-`/`k2-`/`k0-` prefixes instead (see "Transition mode" above) — a Ren'Py validation gate tied to one machine, for instance, is `k0-renpy-validation-gate` there, not an L4 id, because it depends on the machine, not on a specific agent's plugin. The id is written once as an HTML comment directly under the rule's `###` header in its target file (`L1-general.md` for L1, `L2-culture.md` for L2, `machines/<id>/role.md` for L3a, `machines/<id>/environment.md` for L3b, `machines/<id>/k2-environment.md` for L3c — `rules.md` holds only the L3c index row, which carries no `###` header of its own — `machines/<id>/agents/<agent>.md` for L4, or the Transition-mode files for an unmigrated repo) and never changed afterwards (the header text may be reworded; the id may not):
 ```
 ### <Human-readable title>
-<!-- id: <class>-<slug> -->
+<!-- id: <layer-or-class>-<slug> -->
 ```
 This id is the decay aggregator's join key (Phase 0). It exists precisely so a future reword of the title cannot split one rule's dormancy history into two and silently starve the prune channel. The id travels into the session log's finding block (`**Rule-ID:**`) and every future `## Decay check` line (`- [<id>] …`).
 
@@ -222,7 +296,7 @@ Two common shapes:
 **Reason (optional):** <one line with the original observation that motivated this>
 ```
 
-*K1 mutual-understanding rule (typical output of A8; also A6/A7/C1 format preferences):*
+*L2 mutual-understanding rule (typical output of A8; also A6/A7/C1 format preferences):*
 ```
 **Trigger:** <the user's phrase or input pattern — verbatim where possible, not paraphrased>
 **Means:** <the intent — what the user actually wants done when saying it>
